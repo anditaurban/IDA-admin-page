@@ -2,7 +2,6 @@
 
 import React from 'react';
 import Link from 'next/link';
-import Image from 'next/image'; // ✨ FIX: Import komponen Image bawaan Next.js ✨
 import { DM_Sans, Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -46,7 +45,7 @@ export default function InstructorDashboard() {
           </div>
           
           <nav className="hidden md:flex items-center gap-1 ml-4 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
-            <Link href="/" className="px-4 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Dashboard</Link>
+            <Link href="/instructor" className="px-4 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Dashboard</Link>
             <Link href="#" className="px-4 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg text-sm font-bold transition-colors">Kelas Saya</Link>
             <Link href="#" className="px-4 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg text-sm font-bold transition-colors">Siswa & Review</Link>
           </nav>
@@ -63,15 +62,8 @@ export default function InstructorDashboard() {
               <p className={`text-sm font-bold text-slate-900 dark:text-white leading-tight ${googleSansAlt.className}`}>Andita Permata</p>
               <p className="text-[10px] font-bold text-[#00BCD4] uppercase tracking-wider">Expert Mentor</p>
             </div>
-            {/* ✨ FIX: Menggunakan komponen <Image /> dari Next.js untuk performa ✨ */}
-            <div className="size-10 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-[#00BCD4] overflow-hidden relative">
-               <Image 
-                 src="/assets/certificates/ttd.jpg" 
-                 alt="Profile" 
-                 fill
-                 sizes="40px"
-                 className="object-cover opacity-50" 
-               />
+            <div className="size-10 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-[#00BCD4] overflow-hidden">
+               <img src="/assets/certificates/ttd.jpg" alt="Profile" className="w-full h-full object-cover opacity-50" />
             </div>
           </div>
         </div>
@@ -188,6 +180,7 @@ export default function InstructorDashboard() {
                          <span className="material-symbols-outlined text-[20px] block">settings</span>
                        </button>
                        
+                       {/* INI LINK PENGHUBUNG KE HALAMAN TIPTAP / BUILDER */}
                        <Link 
                          href={`/course-editor?course=${course.slug}`} 
                          className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}
