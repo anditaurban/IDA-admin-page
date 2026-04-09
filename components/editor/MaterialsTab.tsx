@@ -1,16 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { DM_Sans } from 'next/font/google';
 import Link from 'next/link';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
 
-export default function CurriculumSettings({ courseSlug }: { courseSlug: string }) {
-  const [curriculum, setCurriculum] = useState<any[]>([]);
+interface ChapterItem {
+  type: 'video' | 'quiz' | 'article';
+  title: string;
+  status: 'published' | 'draft';
+}
 
-  useEffect(() => {
-     const savedCurriculum = localStorage.getItem(`db_curriculum_${courseSlug}`);
-     if (savedCurriculum) setCurriculum(JSON.parse(savedCurriculum));
-  }, [courseSlug]);
+interface CurriculumModule {
+  section: string;
+  chapters: ChapterItem[];
+}
+
+export default function CurriculumSettings({ courseSlug }: { courseSlug: string }) {
+  // ✨ FIX: Menghapus 'setCurriculum' karena komponen ini hanya bersifat read-only ✨
+  const [curriculum] = useState<CurriculumModule[]>(() => {
+     if (typeof window !== 'undefined') {
+        const savedCurriculum = localStorage.getItem(`db_curriculum_${courseSlug}`);
+        if (savedCurriculum) return JSON.parse(savedCurriculum);
+     }
+     return [];
+  });
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -43,7 +56,7 @@ export default function CurriculumSettings({ courseSlug }: { courseSlug: string 
               <div key={idx} className="space-y-2">
                 <p className="text-xs font-bold text-[#00BCD4] uppercase tracking-wider bg-cyan-50 dark:bg-cyan-900/20 inline-block px-3 py-1 rounded-lg">{mod.section}</p>
                 <div className="pl-4 border-l-2 border-slate-100 dark:border-slate-800 space-y-2">
-                  {mod.chapters.map((chap: any, cIdx: number) => (
+                  {mod.chapters.map((chap: ChapterItem, cIdx: number) => (
                     <div key={cIdx} className="flex items-center gap-3 text-sm bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/50">
                         <span className={`material-symbols-outlined text-[18px] ${chap.type === 'video' ? 'text-blue-500' : chap.type === 'quiz' ? 'text-amber-500' : 'text-[#00BCD4]'}`}>
                           {chap.type === 'video' ? 'play_circle' : chap.type === 'quiz' ? 'quiz' : 'article'}

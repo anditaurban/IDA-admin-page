@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { DM_Sans } from 'next/font/google';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
@@ -16,15 +16,20 @@ const defaultLandingData = {
   ]
 };
 
-export default function LandingPageSettings() {
-  const [formData, setFormData] = useState(defaultLandingData);
+type RoadmapStepType = typeof defaultLandingData.roadmap[0];
+
+// ✨ NAMA KOMPONEN DIUBAH MENJADI OverviewTab ✨
+export default function OverviewTab() {
+  const [formData, setFormData] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedData = localStorage.getItem('db_course_landing');
+      if (savedData) return { ...defaultLandingData, ...JSON.parse(savedData) };
+    }
+    return defaultLandingData;
+  });
+  
   const [toolInput, setToolInput] = useState('');
   const [audienceInput, setAudienceInput] = useState('');
-
-  useEffect(() => {
-    const savedData = localStorage.getItem('db_course_landing');
-    if (savedData) setFormData({ ...defaultLandingData, ...JSON.parse(savedData) });
-  }, []);
 
   const saveChanges = (newData: typeof formData) => {
     setFormData(newData);
@@ -35,7 +40,7 @@ export default function LandingPageSettings() {
     saveChanges({ ...formData, [field]: value });
   };
 
-  const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>, field: 'tools' | 'audience', inputVal: string, setInputVal: any) => {
+  const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>, field: 'tools' | 'audience', inputVal: string, setInputVal: React.Dispatch<React.SetStateAction<string>>) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       const newTag = inputVal.trim().replace(/,$/, '');
@@ -47,39 +52,37 @@ export default function LandingPageSettings() {
   };
 
   const removeTag = (field: 'tools' | 'audience', tagToRemove: string) => {
-    saveChanges({ ...formData, [field]: formData[field].filter(t => t !== tagToRemove) });
+    saveChanges({ ...formData, [field]: formData[field].filter((t: string) => t !== tagToRemove) });
   };
 
-  // --- LOGIKA ROADMAP BUILDER ---
   const addRoadmapStep = () => {
     const newStep = { id: `r${Date.now()}`, title: 'Tahap Baru', description: 'Deskripsi tahap pembelajaran', items: ['Materi 1'] };
     saveChanges({ ...formData, roadmap: [...formData.roadmap, newStep] });
   };
 
-  const updateRoadmap = (id: string, field: string, value: any) => {
-    const updatedRoadmap = formData.roadmap.map(step => step.id === id ? { ...step, [field]: value } : step);
+  const updateRoadmap = (id: string, field: string, value: unknown) => {
+    const updatedRoadmap = formData.roadmap.map((step: RoadmapStepType) => step.id === id ? { ...step, [field]: value } : step);
     saveChanges({ ...formData, roadmap: updatedRoadmap });
   };
 
   const removeRoadmapStep = (id: string) => {
     if(confirm("Hapus tahapan ini?")) {
-        saveChanges({ ...formData, roadmap: formData.roadmap.filter(step => step.id !== id) });
+        saveChanges({ ...formData, roadmap: formData.roadmap.filter((step: RoadmapStepType) => step.id !== id) });
     }
   };
 
   return (
     <div className="space-y-8 animate-fade-in pb-10">
       
-      {/* 1. Deskripsi & Target Peserta */}
       <div className="bg-white dark:bg-[#111111] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2">
-          <span className="material-symbols-outlined text-indigo-500">description</span> Deskripsi Penawaran
+        <h3 className={`text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2 ${googleSansAlt.className}`}>
+          <span className="material-symbols-outlined text-indigo-500">description</span> Deskripsi Penawaran (Overview)
         </h3>
 
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tentang Kelas (About)</label>
-          <textarea rows={4} value={formData.about} onChange={(e) => handleChange('about', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3.5 text-sm font-medium text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none leading-relaxed" placeholder="Jelaskan secara detail benefit mengambil kelas ini..." />
+          <textarea rows={5} value={formData.about} onChange={(e) => handleChange('about', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3.5 text-sm font-medium text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all resize-none leading-relaxed" placeholder="Tuliskan deksripsi kelas dan jelaskan detail benefit mengambil kelas ini..." />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -89,7 +92,7 @@ export default function LandingPageSettings() {
                  <span className="text-[9px] font-normal normal-case">Tekan <kbd className="bg-slate-200 dark:bg-slate-700 px-1 rounded">Enter</kbd></span>
               </label>
               <div className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2 flex flex-wrap gap-2 focus-within:ring-2 focus-within:ring-indigo-500/50 transition-all">
-                 {formData.audience.map((aud, index) => (
+                 {formData.audience.map((aud: string, index: number) => (
                    <span key={index} className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm animate-in zoom-in-95 duration-200">
                      <span className="material-symbols-outlined text-[14px] text-indigo-500">group</span>{aud}
                      <button onClick={() => removeTag('audience', aud)} className="ml-1 text-slate-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined text-[14px]">close</span></button>
@@ -105,7 +108,7 @@ export default function LandingPageSettings() {
                  <span className="text-[9px] font-normal normal-case">Tekan <kbd className="bg-slate-200 dark:bg-slate-700 px-1 rounded">Enter</kbd></span>
               </label>
               <div className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2 flex flex-wrap gap-2 focus-within:ring-2 focus-within:ring-indigo-500/50 transition-all">
-                 {formData.tools.map((tool, index) => (
+                 {formData.tools.map((tool: string, index: number) => (
                    <span key={index} className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm animate-in zoom-in-95 duration-200">
                      <span className="material-symbols-outlined text-[14px] text-indigo-500">code</span>{tool}
                      <button onClick={() => removeTag('tools', tool)} className="ml-1 text-slate-400 hover:text-red-500 transition-colors"><span className="material-symbols-outlined text-[14px]">close</span></button>
@@ -117,12 +120,12 @@ export default function LandingPageSettings() {
         </div>
       </div>
 
-      {/* ✨ 2. ROADMAP BUILDER (SANGAT CANGGIH & DINAMIS) ✨ */}
+      {/* SISA KODE ROADMAP & PROFIL SAMA PERCIS SEPERTI SEBELUMNYA */}
       <div className="bg-white dark:bg-[#111111] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-cyan-500"></div>
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
             <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+              <h3 className={`text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1 ${googleSansAlt.className}`}>
                 <span className="material-symbols-outlined text-cyan-500">timeline</span> Roadmap Pembelajaran
               </h3>
               <p className="text-xs text-slate-500">Susun tahapan materi (*Timeline*) yang akan dilihat calon siswa.</p>
@@ -133,7 +136,7 @@ export default function LandingPageSettings() {
         </div>
 
         <div className="space-y-4">
-           {formData.roadmap.map((step, idx) => (
+           {formData.roadmap.map((step: RoadmapStepType, idx: number) => (
               <div key={step.id} className="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 relative group transition-all hover:border-cyan-300 dark:hover:border-cyan-700/50">
                  <div className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => removeRoadmapStep(step.id)} className="text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 p-1.5 rounded-md"><span className="material-symbols-outlined text-[18px] block">delete</span></button>
@@ -157,11 +160,10 @@ export default function LandingPageSettings() {
         </div>
       </div>
 
-      {/* 3. Profil Instruktur */}
       <div className="bg-white dark:bg-[#111111] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
         <div className="md:col-span-2">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2">
+          <h3 className={`text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2 ${googleSansAlt.className}`}>
             <span className="material-symbols-outlined text-emerald-500">person</span> 
             Profil Penulis / Instruktur
           </h3>

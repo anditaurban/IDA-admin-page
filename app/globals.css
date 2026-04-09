@@ -1,13 +1,22 @@
+/* 1. Import Font Wajib di baris paling atas */
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+/* 2. Import Tailwind v4 (Menggantikan 3 baris @tailwind lama) */
 @import "tailwindcss";
 
+/* 3. Hubungkan ke file konfigurasi plugin Anda */
 @config "../tailwind.config.ts";
 
+/* ==============================================================
+   4. CUSTOM CSS (WARNA, EFEK, SCROLLBAR)
+============================================================== */
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 214, 219, 220;
   --background-end-rgb: 255, 255, 255;
 }
 
+/* Efek Glassmorphism Modern */
 .glass-panel {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
@@ -16,6 +25,7 @@
   background: rgba(28, 28, 46, 0.95);
 }
 
+/* Background Mesh Gradient Elegan */
 .mesh-gradient {
   background-color: #f6f6f8;
   background-image: 
@@ -32,6 +42,7 @@
       radial-gradient(at 90% 10%, hsla(260, 60%, 60%, 0.15) 0px, transparent 50%);
 }
 
+/* Custom Scrollbar Ramping */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -46,6 +57,7 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Utilitas Sembunyikan Scrollbar tapi tetap bisa di-scroll */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -54,6 +66,7 @@
   scrollbar-width: none;
 }
 
+/* Konfigurasi Standar Google Material Symbols */
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
   font-weight: normal;

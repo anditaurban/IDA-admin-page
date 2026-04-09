@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image'; // ✨ FIX: Import komponen Image bawaan Next.js ✨
+import Image from 'next/image';
 import { DM_Sans, Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -15,7 +15,7 @@ const instructorStats = [
   { id: 3, label: 'Rata-rata Rating', value: '4.8 / 5.0', icon: 'star', color: 'text-amber-500', bg: 'bg-amber-500/10' },
 ];
 
-const instructorCourses = [
+const initialCourses = [
   {
     id: 1,
     slug: 'ngodingai',
@@ -28,11 +28,38 @@ const instructorCourses = [
 ];
 
 export default function InstructorDashboard() {
+  const [courses, setCourses] = useState(initialCourses);
+  
+  // ✨ STATE UNTUK MODAL TAMBAH KELAS ✨
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newCourseTitle, setNewCourseTitle] = useState('');
+
+  const handleCreateCourse = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCourseTitle.trim()) return;
+
+    const newSlug = newCourseTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+    const newCourse = {
+      id: Date.now(),
+      slug: newSlug,
+      title: newCourseTitle,
+      status: 'Draft',
+      students: 0,
+      lastUpdated: 'Baru saja',
+      progress: 0,
+    };
+
+    setCourses([newCourse, ...courses]);
+    setIsAddModalOpen(false);
+    setNewCourseTitle('');
+    // Di dunia nyata, di sini Anda bisa melempar user ke halaman: router.push(`/course-editor?course=${newSlug}`)
+  };
+
   return (
-    <div className={`min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] ${inter.className}`}>
+    <div className={`min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] relative ${inter.className}`}>
       
       {/* =========================================
-          TOP NAVIGATION (INSTRUCTOR ZONE)
+          TOP NAVIGATION
       ========================================= */}
       <header className="h-16 bg-white dark:bg-[#111111] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 sticky top-0 z-30">
         <div className="flex items-center gap-6">
@@ -63,15 +90,8 @@ export default function InstructorDashboard() {
               <p className={`text-sm font-bold text-slate-900 dark:text-white leading-tight ${googleSansAlt.className}`}>Andita Permata</p>
               <p className="text-[10px] font-bold text-[#00BCD4] uppercase tracking-wider">Expert Mentor</p>
             </div>
-            {/* ✨ FIX: Menggunakan komponen <Image /> dari Next.js untuk performa ✨ */}
             <div className="size-10 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-[#00BCD4] overflow-hidden relative">
-               <Image 
-                 src="/assets/certificates/ttd.jpg" 
-                 alt="Profile" 
-                 fill
-                 sizes="40px"
-                 className="object-cover opacity-50" 
-               />
+               <Image src="/assets/certificates/ttd.jpg" alt="Profile" fill sizes="40px" className="object-cover opacity-50" />
             </div>
           </div>
         </div>
@@ -82,7 +102,6 @@ export default function InstructorDashboard() {
       ========================================= */}
       <main className="max-w-7xl mx-auto px-6 py-10 flex flex-col gap-10">
         
-        {/* --- WELCOME HEADER --- */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
             <h1 className={`text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2 ${googleSansAlt.className}`}>
@@ -90,12 +109,12 @@ export default function InstructorDashboard() {
             </h1>
             <p className="text-slate-500 dark:text-slate-400 font-medium">Berikut adalah ringkasan performa kelas dan siswa Anda hari ini.</p>
           </div>
-          <button className={`flex items-center gap-2 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 active:scale-95 transition-all ${googleSansAlt.className}`}>
+          {/* ✨ TOMBOL PEMICU MODAL ✨ */}
+          <button onClick={() => setIsAddModalOpen(true)} className={`flex items-center gap-2 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 active:scale-95 transition-all ${googleSansAlt.className}`}>
             <span className="material-symbols-outlined text-[20px]">add</span> Buat Kelas Baru
           </button>
         </div>
 
-        {/* --- STATS OVERVIEW --- */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {instructorStats.map((stat) => (
             <div key={stat.id} className="bg-white dark:bg-[#111111] p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-5 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
@@ -110,35 +129,24 @@ export default function InstructorDashboard() {
           ))}
         </div>
 
-        {/* --- COURSE MANAGEMENT SECTION --- */}
         <div className="flex flex-col gap-6 mt-4">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
              <h2 className={`text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 ${googleSansAlt.className}`}>
                <span className="material-symbols-outlined text-[#00BCD4]">library_books</span> Kelola Kelas Anda
              </h2>
-             
-             {/* Filter & Search */}
              <div className="flex items-center gap-3">
                 <div className="hidden sm:flex items-center bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2">
                    <span className="material-symbols-outlined text-slate-400 text-[18px]">search</span>
                    <input type="text" placeholder="Cari kelas..." className="bg-transparent border-none focus:ring-0 text-sm w-40 ml-2 outline-none dark:text-white" />
                 </div>
-                <button className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111111] text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
-                   <span className="material-symbols-outlined text-[20px] block">filter_list</span>
-                </button>
              </div>
           </div>
 
-          {/* COURSE CARDS GRID */}
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {instructorCourses.map((course) => (
+            {courses.map((course) => (
               <div key={course.id} className="bg-white dark:bg-[#111111] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-xl hover:border-cyan-200 dark:hover:border-slate-600 transition-all duration-300 group flex flex-col">
-                
-                {/* Card Header (Thumbnail Mockup) */}
                 <div className="h-32 bg-slate-100 dark:bg-slate-900 relative border-b border-slate-200 dark:border-slate-800">
                   <div className="absolute inset-0 bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 opacity-50 group-hover:opacity-100 transition-opacity"></div>
-                  
-                  {/* Status Badge */}
                   <div className="absolute top-4 left-4">
                      <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-md flex items-center gap-1.5 ${
                        course.status === 'Published' 
@@ -151,7 +159,6 @@ export default function InstructorDashboard() {
                   </div>
                 </div>
 
-                {/* Card Body */}
                 <div className="p-6 flex flex-col flex-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Class ID: {course.slug}</p>
                   <h3 className={`text-lg font-bold text-slate-900 dark:text-white leading-snug mb-4 group-hover:text-[#00BCD4] transition-colors line-clamp-2 ${googleSansAlt.className}`}>
@@ -159,19 +166,15 @@ export default function InstructorDashboard() {
                   </h3>
                   
                   <div className="mt-auto space-y-4">
-                    {/* Stats Row */}
                     <div className="flex items-center justify-between text-sm">
                        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
-                         <span className="material-symbols-outlined text-[18px]">group</span>
-                         {course.students} Siswa
+                         <span className="material-symbols-outlined text-[18px]">group</span> {course.students} Siswa
                        </div>
                        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
-                         <span className="material-symbols-outlined text-[16px]">update</span>
-                         {course.lastUpdated}
+                         <span className="material-symbols-outlined text-[16px]">update</span> {course.lastUpdated}
                        </div>
                     </div>
 
-                    {/* Progress Bar (Kelengkapan Materi) */}
                     <div className="space-y-1.5">
                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
                          <span>Kelengkapan Kurikulum</span>
@@ -182,30 +185,63 @@ export default function InstructorDashboard() {
                        </div>
                     </div>
 
-                    {/* ✨ ACTION BUTTON: TERHUBUNG KE BUILDER ✨ */}
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
                        <button className="p-2 text-slate-400 hover:text-blue-500 transition-colors" title="Pengaturan Kelas">
                          <span className="material-symbols-outlined text-[20px] block">settings</span>
                        </button>
-                       
-                       <Link 
-                         href={`/course-editor?course=${course.slug}`} 
-                         className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}
-                       >
-                         <span className="material-symbols-outlined text-[18px]">edit_square</span>
-                         Edit Kelas
+                       <Link href={`/course-editor?course=${course.slug}`} className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}>
+                         <span className="material-symbols-outlined text-[18px]">edit_square</span> Edit Kelas
                        </Link>
                     </div>
                   </div>
                 </div>
-
               </div>
             ))}
           </div>
-
         </div>
-
       </main>
+
+      {/* ✨ MODAL TAMBAH KELAS (GLASSMORPHISM UI) ✨ */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+           {/* Backdrop */}
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={() => setIsAddModalOpen(false)}></div>
+           
+           {/* Modal Box */}
+           <div className="bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 w-full max-w-md rounded-3xl shadow-2xl relative z-10 animate-in zoom-in-95 duration-200 overflow-hidden">
+              <div className="h-2 w-full bg-[#00BCD4]"></div>
+              <div className="p-6 md:p-8">
+                 <div className="flex items-center justify-between mb-6">
+                    <h3 className={`text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 ${googleSansAlt.className}`}>
+                      <span className="material-symbols-outlined text-[#00BCD4]">add_circle</span> Buat Kelas Baru
+                    </h3>
+                    <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                      <span className="material-symbols-outlined block text-[18px]">close</span>
+                    </button>
+                 </div>
+
+                 <form onSubmit={handleCreateCourse} className="space-y-5">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Nama Kelas Utama</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={newCourseTitle}
+                        onChange={(e) => setNewCourseTitle(e.target.value)}
+                        placeholder="Contoh: Master UI/UX Design..." 
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3.5 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-[#00BCD4]/50 outline-none transition-all"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-2">Sistem akan otomatis membuatkan Class ID berdasarkan nama ini.</p>
+                    </div>
+
+                    <button type="submit" className={`w-full py-3.5 bg-[#00BCD4] hover:bg-cyan-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all ${googleSansAlt.className}`}>
+                       Lanjutkan ke Editor
+                    </button>
+                 </form>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }

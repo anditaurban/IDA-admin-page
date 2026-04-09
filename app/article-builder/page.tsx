@@ -7,8 +7,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link'; 
 
 import ArticleWorkspace from '@/components/builder/ArticleWorkspace';
-import VideoWorkspace from '@/components/builder/VideoWorkspace';
-import QuizWorkspace from '@/components/builder/QuizWorkspace';
+import DocumentWorkspace from '@/components/builder/DocumentWorkspace';
 
 const inter = Inter({ subsets: ['latin'] });
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
@@ -16,7 +15,7 @@ const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'
 interface Chapter {
   id: string;
   title: string;
-  type: 'article' | 'video' | 'quiz';
+  type: 'article' | 'document';
   status: string;
 }
 
@@ -26,27 +25,57 @@ interface Module {
   chapters: Chapter[];
 }
 
+// ✨ SINKRONISASI DATA DUMMY DENGAN SISI SISWA ✨
+const defaultModules: Module[] = [
+  {
+    id: 'sec-1',
+    section: 'Bagian 1: Pengenalan',
+    chapters: [
+      { id: 'c-1', title: 'Apa itu AI & LLM?', type: 'article', status: 'published' },
+      { id: 'c-2', title: 'Slide Presentasi Dasar AI', type: 'document', status: 'published' }
+    ]
+  },
+  {
+    id: 'sec-2',
+    section: 'Bagian 2: Persiapan Tools',
+    chapters: [
+      { id: 'c-3', title: 'Instalasi Python & VS Code', type: 'article', status: 'published' },
+      { id: 'c-4', title: 'Cheatsheet Git & Terminal (PDF)', type: 'document', status: 'published' }
+    ]
+  }
+];
+
+const defaultContentMap: Record<string, { content?: string; url?: string; description?: string }> = {
+  'c-1': { content: '<h2>Selamat Datang!</h2><p>Di era modern ini, AI bukan lagi sekadar fiksi ilmiah. Mari kita pelajari dasar-dasar Large Language Models (LLM) dan bagaimana mereka merevolusi cara kita membuat aplikasi.</p>' },
+  'c-2': { url: 'https://drive.google.com/file/d/1FjvYPdbGL77LunYwFDJk2GktKccDwmRp/preview', description: 'Pelajari slide presentasi berikut dengan saksama sebelum melanjutkan ke bagian praktik.' },
+  'c-3': { content: '<h2>Setup Environment</h2><p>Pastikan Anda menginstal Python versi 3.10 ke atas. Ikuti panduan langkah demi langkah berikut ini untuk mengatur environment lokal Anda.</p>' },
+  'c-4': { url: 'https://drive.google.com/file/d/1avYJwZrnaiRrgEiomyN9biMLhEevG6sc/preview', description: 'Simpan panduan cepat terminal dan Git ini sebagai referensi Anda saat mengerjakan proyek akhir.' }
+};
+
 function BuilderContent() {
   const { showToast } = useToast();
   const searchParams = useSearchParams();
   const router = useRouter();
   
   const courseSlug = searchParams.get('course') || 'ngodingai';
-  const chapterId = searchParams.get('chapter') || '1';
+  // Default ke c-1 sesuai data dummy baru
+  const chapterId = searchParams.get('chapter') || 'c-1';
 
-  const [modules, setModules] = useState<Module[]>([
-    { id: 'sec-1', section: 'Bagian 1: Persiapan', chapters: [{ id: '1', title: 'Bab 1: Pengenalan Web & AI', type: 'article', status: 'published' }] }
-  ]);
+  const [modules, setModules] = useState<Module[]>(() => {
+    if (typeof window !== 'undefined') {
+       const savedCurriculum = localStorage.getItem(`db_curriculum_${courseSlug}`);
+       // Validasi: Cegah me-load data dummy versi lama, paksa pakai versi sinkronisasi
+       if (savedCurriculum && savedCurriculum.includes('c-1')) {
+           return JSON.parse(savedCurriculum);
+       }
+    }
+    return defaultModules;
+  });
 
   const updateModulesAndSave = (newModules: Module[]) => {
     setModules(newModules);
     localStorage.setItem(`db_curriculum_${courseSlug}`, JSON.stringify(newModules));
   };
-
-  useEffect(() => {
-      const savedCurriculum = localStorage.getItem(`db_curriculum_${courseSlug}`);
-      if (savedCurriculum) setModules(JSON.parse(savedCurriculum));
-  }, [courseSlug]);
 
   const [expandedSection, setExpandedSection] = useState<string>('sec-1');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -64,7 +93,6 @@ function BuilderContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ✨ FIX: Menggunakan for...of agar TypeScript tidak menganggap tipe "never" ✨
   let activeModuleInfo: Chapter | undefined = undefined;
   for (const mod of modules) {
     const found = mod.chapters.find((c) => c.id === chapterId);
@@ -75,12 +103,11 @@ function BuilderContent() {
   }
 
   const [activeChapter, setActiveChapter] = useState(chapterId);
-  const [activeType, setActiveType] = useState<'article'|'video'|'quiz'>(activeModuleInfo?.type || 'article');
+  const [activeType, setActiveType] = useState<'article'|'document'>(activeModuleInfo?.type || 'article');
   const [chapterTitle, setChapterTitle] = useState(activeModuleInfo?.title || '');
   const [workspaceData, setWorkspaceData] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
-     // ✨ FIX: Metode loop konvensional agar TypeScript menganalisa tipenya dengan benar ✨
      let currentInfo: Chapter | undefined = undefined;
      let currentSectionId = '';
      for (const mod of modules) {
@@ -98,8 +125,16 @@ function BuilderContent() {
         if(!editingSectionId) setExpandedSection(currentSectionId);
         
         const savedData = localStorage.getItem(`db_content_${courseSlug}_${activeChapter}`);
-        if (savedData) setWorkspaceData(JSON.parse(savedData));
-        else setWorkspaceData(null); 
+        if (savedData) {
+            setWorkspaceData(JSON.parse(savedData));
+        } else {
+            // Muat dari dummy map jika belum ada di localStorage (untuk presentasi mulus)
+            if (defaultContentMap[activeChapter]) {
+               setWorkspaceData(defaultContentMap[activeChapter]);
+            } else {
+               setWorkspaceData(null); 
+            }
+        }
      }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChapter, modules]);
@@ -131,9 +166,9 @@ function BuilderContent() {
     showToast('success', 'Bagian berhasil dihapus.');
   };
 
-  const handleAddChapter = (targetSectionId: string, type: 'article' | 'video' | 'quiz') => {
-    const newChapterId = `${Date.now()}`;
-    const newChapterTitle = type === 'article' ? 'Artikel Baru' : type === 'video' ? 'Video Baru' : 'Kuis Baru';
+  const handleAddChapter = (targetSectionId: string, type: 'article' | 'document') => {
+    const newChapterId = `chap-${Date.now()}`;
+    const newChapterTitle = type === 'article' ? 'Artikel Baru' : 'Materi File Baru';
     
     const newModules = modules.map(mod => 
       mod.id === targetSectionId 
@@ -172,6 +207,15 @@ function BuilderContent() {
       showToast('success', 'Bab berhasil dihapus permanen.');
   };
 
+  const handlePublishAll = () => {
+    const publishedModules = modules.map(mod => ({
+      ...mod,
+      chapters: mod.chapters.map(c => ({ ...c, status: 'published' })) 
+    }));
+    updateModulesAndSave(publishedModules);
+    showToast('success', 'Seluruh materi berhasil disinkronisasi dan dipublish ke Aplikasi Siswa!');
+  };
+
   return (
     <div className={`flex flex-col h-screen bg-[#fafafa] dark:bg-[#0a0a0a] ${inter.className}`}>
       <header className="h-16 shrink-0 bg-white dark:bg-[#0a0a0a] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-6 z-40 sticky top-0 shadow-sm">
@@ -191,7 +235,7 @@ function BuilderContent() {
         </div>
         <div className="flex items-center gap-4">
           <span className="hidden lg:inline text-xs font-medium text-slate-400">Sinkron dengan Student App</span>
-          <button onClick={() => showToast('success', 'Sinkronisasi berhasil!')} className={`flex items-center gap-2 px-6 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-full text-sm font-bold transition-all hover:opacity-90 active:scale-95 shadow-md ${googleSansAlt.className}`}>
+          <button onClick={handlePublishAll} className={`flex items-center gap-2 px-6 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-full text-sm font-bold transition-all hover:opacity-90 active:scale-95 shadow-md ${googleSansAlt.className}`}>
             <span className="material-symbols-outlined text-[18px]">cloud_sync</span><span className="hidden sm:inline">Publish Semua</span><span className="sm:hidden">Publish</span>
           </button>
         </div>
@@ -226,8 +270,7 @@ function BuilderContent() {
                             <div ref={sectionMenuRef} className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 py-2 origin-top-right animate-in fade-in zoom-in-95 duration-200">
                                <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tambah Materi</div>
                                <button onClick={(e) => { e.stopPropagation(); handleAddChapter(mod.id, 'article'); setOpenSectionMenuId(null); }} className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-cyan-50 hover:text-cyan-600 dark:hover:bg-slate-700 flex items-center gap-3"><span className="material-symbols-outlined text-[16px] text-cyan-500">article</span> Artikel Teks</button>
-                               <button onClick={(e) => { e.stopPropagation(); handleAddChapter(mod.id, 'video'); setOpenSectionMenuId(null); }} className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-slate-700 flex items-center gap-3"><span className="material-symbols-outlined text-[16px] text-blue-500">play_circle</span> Video Materi</button>
-                               <button onClick={(e) => { e.stopPropagation(); handleAddChapter(mod.id, 'quiz'); setOpenSectionMenuId(null); }} className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-slate-700 flex items-center gap-3"><span className="material-symbols-outlined text-[16px] text-amber-500">quiz</span> Kuis Evaluasi</button>
+                               <button onClick={(e) => { e.stopPropagation(); handleAddChapter(mod.id, 'document'); setOpenSectionMenuId(null); }} className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-slate-700 flex items-center gap-3"><span className="material-symbols-outlined text-[16px] text-emerald-500">picture_as_pdf</span> File Dokumen</button>
                                <div className="h-px w-full bg-slate-100 dark:bg-slate-700/50 my-2"></div>
                                <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Pengaturan Bagian</div>
                                <button onClick={(e) => { e.stopPropagation(); setEditingSectionId(mod.id); setOpenSectionMenuId(null); }} className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3"><span className="material-symbols-outlined text-[16px]">edit</span> Ubah Nama</button>
@@ -241,7 +284,6 @@ function BuilderContent() {
                       </div>
                     )}
                   </div>
-                  {/* ✨ FIX TAILWIND: max-h-[800px] -> max-h-200 ✨ */}
                   <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-200 opacity-100 pb-3 px-3' : 'max-h-0 opacity-0'}`}>
                     <div className="space-y-1 mt-1 border-t border-slate-100 dark:border-slate-800 pt-2">
                       {mod.chapters.length === 0 ? (
@@ -253,7 +295,7 @@ function BuilderContent() {
                         mod.chapters.map((chapter) => (
                           <button key={chapter.id} onClick={() => handleChapterChange(chapter.id)} className={`w-full text-left flex items-center justify-between gap-3 p-2.5 rounded-xl transition-all group ${activeChapter === chapter.id ? 'bg-[#00BCD4]/10 dark:bg-cyan-900/20 shadow-sm border border-[#00BCD4]/30' : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'}`}>
                             <div className="flex items-center gap-2.5 overflow-hidden">
-                              <span className={`material-symbols-outlined text-[18px] ${activeChapter === chapter.id ? 'text-[#00BCD4]' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`}>{chapter.type === 'article' ? 'article' : chapter.type === 'video' ? 'play_circle' : 'quiz'}</span>
+                              <span className={`material-symbols-outlined text-[18px] ${activeChapter === chapter.id ? 'text-[#00BCD4]' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`}>{chapter.type === 'article' ? 'article' : 'picture_as_pdf'}</span>
                               <p className={`text-xs font-medium truncate ${activeChapter === chapter.id ? 'text-[#00BCD4] font-bold' : 'text-slate-600 dark:text-slate-400'}`}>{chapter.title}</p>
                             </div>
                             <span className={`size-1.5 rounded-full shrink-0 ${chapter.status === 'draft' ? 'bg-amber-400' : 'bg-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity'}`}></span>
@@ -276,15 +318,13 @@ function BuilderContent() {
           {activeModuleInfo ? (
             <>
               {activeType === 'article' && <ArticleWorkspace key={activeChapter} title={chapterTitle} setTitle={setChapterTitle} initialContent={workspaceData?.content as string || ''} onContentUpdate={(html: string) => articleHTMLRef.current = html} onSave={handleSaveActiveChapter} onDelete={handleDeleteActiveChapter} />}
-              {activeType === 'video' && <VideoWorkspace key={activeChapter} title={chapterTitle} setTitle={setChapterTitle} initialUrl={workspaceData?.url as string || ''} onSave={handleSaveActiveChapter} onDelete={handleDeleteActiveChapter} />}
-              {/* ✨ FIX: Menghapus "as any[]" dan menggantinya dengan tipe "Array<Record<string, unknown>>" yang aman ✨ */}
-              {activeType === 'quiz' && <QuizWorkspace key={activeChapter} title={chapterTitle} setTitle={setChapterTitle} initialQuestions={(workspaceData?.questions as Array<Record<string, unknown>>) || []} onSave={handleSaveActiveChapter} onDelete={handleDeleteActiveChapter} />}
+              {activeType === 'document' && <DocumentWorkspace key={activeChapter} title={chapterTitle} setTitle={setChapterTitle} initialUrl={workspaceData?.url as string || ''} initialDescription={workspaceData?.description as string || ''} onSave={handleSaveActiveChapter} onDelete={handleDeleteActiveChapter} />}
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
                <span className="material-symbols-outlined text-6xl mb-4 opacity-20">inventory_2</span>
-               <p className="font-bold">Belum ada bab yang dibuat.</p>
-               <p className="text-sm mt-1">Gunakan ikon titik tiga (⋮) pada daftar bagian di kiri.</p>
+               <p className="font-bold">Belum ada bab yang dipilih.</p>
+               <p className="text-sm mt-1">Pilih bab dari daftar materi di menu sebelah kiri.</p>
             </div>
           )}
         </main>

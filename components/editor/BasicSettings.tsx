@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { DM_Sans } from 'next/font/google';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
@@ -12,14 +12,16 @@ const defaultSettingsData = {
 };
 
 export default function BasicSettings() {
-  const [formData, setFormData] = useState(defaultSettingsData);
-
-  useEffect(() => {
-    const savedData = localStorage.getItem('db_course_overview');
-    if (savedData) {
-      setFormData({ ...defaultSettingsData, ...JSON.parse(savedData) });
+  // ✨ FIX: Menggunakan Lazy Initialization untuk menghindari setState di dalam useEffect saat awal render ✨
+  const [formData, setFormData] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedData = localStorage.getItem('db_course_overview');
+      if (savedData) {
+        return { ...defaultSettingsData, ...JSON.parse(savedData) };
+      }
     }
-  }, []);
+    return defaultSettingsData;
+  });
 
   const saveChanges = (newData: typeof formData) => {
     setFormData(newData);
@@ -35,7 +37,9 @@ export default function BasicSettings() {
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="bg-white dark:bg-[#111111] p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-6 relative overflow-hidden group">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-[#00BCD4]"></div>
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2">
+        
+        {/* ✨ FIX: Variabel font googleSansAlt diterapkan pada elemen H3 ini ✨ */}
+        <h3 className={`text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2 ${googleSansAlt.className}`}>
           <span className="material-symbols-outlined text-[#00BCD4]">settings</span> 
           Pengaturan Dasar Kelas
         </h3>
