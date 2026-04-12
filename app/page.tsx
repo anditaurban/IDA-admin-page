@@ -186,9 +186,6 @@ export default function InstructorDashboard() {
                     </div>
 
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-                       <button className="p-2 text-slate-400 hover:text-blue-500 transition-colors" title="Pengaturan Kelas">
-                         <span className="material-symbols-outlined text-[20px] block">settings</span>
-                       </button>
                        <Link href={`/course-editor?course=${course.slug}`} className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}>
                          <span className="material-symbols-outlined text-[18px]">edit_square</span> Edit Kelas
                        </Link>
