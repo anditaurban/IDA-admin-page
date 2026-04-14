@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -9,44 +9,100 @@ import { DM_Sans, Inter } from 'next/font/google';
 const inter = Inter({ subsets: ['latin'] });
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
 
+// Default dummy stats untuk visualisasi
 const instructorStats = [
   { id: 1, label: 'Total Siswa Aktif', value: '1,248', icon: 'groups', color: 'text-blue-500', bg: 'bg-blue-500/10' },
   { id: 2, label: 'Pendapatan Bulan Ini', value: 'Rp 14.5M', icon: 'account_balance_wallet', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
   { id: 3, label: 'Rata-rata Rating', value: '4.8 / 5.0', icon: 'star', color: 'text-amber-500', bg: 'bg-amber-500/10' },
 ];
 
-const initialCourses = [
-  {
-    id: 1,
-    slug: 'ngodingai',
-    title: 'NgodingAI: Master GenAI & LLMs',
-    status: 'Published',
-    students: 842,
-    lastUpdated: '2 jam yang lalu',
-    progress: 100,
-  },
-  {
-    id: 2,
-    slug: 'sales-mastery',
-    title: 'B2B Tech Sales Mastery',
-    status: 'Draft',
-    students: 0,
-    lastUpdated: '1 hari yang lalu',
-    progress: 45,
-  }
-];
+// ✨ FIX: Menambahkan Interface untuk menghindari penggunaan tipe 'any'
+interface CourseItem {
+  id: string | number;
+  slug: string;
+  title: string;
+  status: string;
+  students: number;
+  lastUpdated: string;
+  progress: number;
+}
 
 export default function InstructorDashboard() {
   const router = useRouter();
   const [activeMenu, setActiveMenu] = useState('dashboard');
   
-  // ✨ STATE DATA KELAS & PENCARIAN ✨
-  const [courses] = useState(initialCourses);
+  // ✨ FIX: Menggunakan interface CourseItem[] menggantikan any[]
+  const [courses, setCourses] = useState<CourseItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
   // STATE MODAL
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCourseTitle, setNewCourseTitle] = useState('');
+
+  // ✨ FUNGSI SINKRONISASI LOCALSTORAGE ✨
+  useEffect(() => {
+    const loadCoursesFromStorage = () => {
+      try {
+        // Cari semua data course basic settings di localStorage
+        const allKeys = Object.keys(localStorage);
+        const courseKeys = allKeys.filter(key => key.startsWith('db_course_basic_'));
+        
+        let loadedCourses: CourseItem[] = [];
+
+        // Jika ada data di localStorage, gunakan itu
+        if (courseKeys.length > 0) {
+          loadedCourses = courseKeys.map((key) => {
+             const data = JSON.parse(localStorage.getItem(key) || '{}');
+             const slug = key.replace('db_course_basic_', '');
+             
+             // Coba hitung progress dari kurikulum jika ada
+             let progress = 45; // Default progress
+             const curriculumStr = localStorage.getItem(`db_curriculum_${slug}`);
+             if (curriculumStr && curriculumStr !== '[]') {
+                progress = 100; // Jika ada kurikulum, anggap selesai
+             }
+
+             return {
+                id: slug, // Gunakan slug sebagai ID
+                slug: slug,
+                title: data.title || 'Untitled Course',
+                status: data.isPublished ? 'Published' : 'Draft',
+                students: Math.floor(Math.random() * 500), // Dummy data
+                lastUpdated: 'Baru saja diperbarui',
+                progress: progress,
+             };
+          });
+        } else {
+           // Fallback Default jika localStorage kosong (untuk pertama kali load)
+           loadedCourses = [
+              {
+                 id: 1,
+                 slug: 'ngodingai',
+                 title: 'NgodingAI: Master GenAI & LLMs',
+                 status: 'Published',
+                 students: 842,
+                 lastUpdated: '2 jam yang lalu',
+                 progress: 100,
+              }
+           ];
+        }
+
+        setCourses(loadedCourses);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Gagal memuat data kelas:", error);
+        setIsLoading(false);
+      }
+    };
+
+    // Load pertama kali
+    loadCoursesFromStorage();
+
+    // Dengarkan event storage agar live update jika tab lain berubah
+    window.addEventListener('storage', loadCoursesFromStorage);
+    return () => window.removeEventListener('storage', loadCoursesFromStorage);
+  }, []);
   
   const generateSlug = (title: string) => {
     return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
@@ -57,9 +113,20 @@ export default function InstructorDashboard() {
     if (!newCourseTitle.trim()) return;
     
     const slug = generateSlug(newCourseTitle);
+    
+    // Inisialisasi data kelas baru di localStorage
+    const newCourseData = {
+       title: newCourseTitle,
+       slug: slug,
+       isPublished: false
+    };
+    localStorage.setItem(`db_course_basic_${slug}`, JSON.stringify(newCourseData));
+
     setIsAddModalOpen(false);
     
+    // Refresh cache saat pindah halaman
     router.push(`/course-editor?course=${slug}`);
+    router.refresh(); 
   };
 
   const filteredCourses = courses.filter(course => 
@@ -143,7 +210,7 @@ export default function InstructorDashboard() {
           </div>
         </header>
 
-        <main className="p-6 md:p-10 flex flex-col gap-10 max-w-7xl">
+        <main className="p-6 md:p-10 flex flex-col gap-10 max-w-7xl w-full mx-auto">
           
           {/* WELCOME SECTION */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 p-8 bg-linear-to-r from-[#1b2636] to-slate-800 rounded-3xl shadow-xl relative overflow-hidden">
@@ -174,14 +241,13 @@ export default function InstructorDashboard() {
             ))}
           </div>
 
-          {/* ✨ UI KELAS YANG LEBIH BARU & MODERN ✨ */}
+          {/* KELOLA KELAS */}
           <div className="flex flex-col gap-6 mt-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 gap-4">
                <h2 className={`text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 ${googleSansAlt.className}`}>
                  <span className="material-symbols-outlined text-[#00BCD4]">library_books</span> Kelola Kelas Anda
                </h2>
                
-               {/* SEARCH BAR BARU */}
                <div className="flex items-center gap-3 w-full sm:w-auto">
                   <div className="flex-1 sm:flex-none flex items-center bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-[#00BCD4]/50 transition-all">
                      <span className="material-symbols-outlined text-slate-400 text-[18px]">search</span>
@@ -196,76 +262,79 @@ export default function InstructorDashboard() {
                </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {filteredCourses.length === 0 ? (
-                 <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
-                    <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">search_off</span>
-                    <p className="text-slate-500 font-medium">Tidak ada kelas yang sesuai dengan pencarian Anda.</p>
-                 </div>
-              ) : (
-                filteredCourses.map((course) => (
-                  <div key={course.id} className="bg-white dark:bg-[#111111] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-xl hover:border-cyan-200 dark:hover:border-slate-700 transition-all duration-300 group flex flex-col">
-                    
-                    {/* COVER IMAGE MOCKUP */}
-                    <div className="h-32 bg-slate-100 dark:bg-slate-900 relative border-b border-slate-200 dark:border-slate-800 overflow-hidden">
-                      <div className="absolute inset-0 bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 opacity-50 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"></div>
-                      <div className="absolute top-4 left-4 z-10">
-                         <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-md flex items-center gap-1.5 ${
-                           course.status === 'Published' 
-                           ? 'bg-emerald-50/90 text-emerald-600 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50' 
-                           : 'bg-amber-50/90 text-amber-600 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/50'
-                         }`}>
-                           <span className={`size-1.5 rounded-full ${course.status === 'Published' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
-                           {course.status}
-                         </span>
-                      </div>
+            {isLoading ? (
+               <div className="col-span-full py-16 text-center">
+                 <div className="size-10 border-4 border-slate-200 border-t-[#00BCD4] rounded-full animate-spin mx-auto mb-4"></div>
+                 <p className="text-slate-500 font-medium animate-pulse">Memuat data kelas...</p>
+               </div>
+            ) : (
+               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                 {filteredCourses.length === 0 ? (
+                    <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+                       <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">search_off</span>
+                       <p className="text-slate-500 font-medium">Tidak ada kelas yang sesuai dengan pencarian Anda.</p>
                     </div>
+                 ) : (
+                   filteredCourses.map((course) => (
+                     <div key={course.id} className="bg-white dark:bg-[#111111] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-xl hover:border-cyan-200 dark:hover:border-slate-700 transition-all duration-300 group flex flex-col">
+                       
+                       <div className="h-32 bg-slate-100 dark:bg-slate-900 relative border-b border-slate-200 dark:border-slate-800 overflow-hidden">
+                         <div className="absolute inset-0 bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 opacity-50 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"></div>
+                         <div className="absolute top-4 left-4 z-10">
+                            <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-md flex items-center gap-1.5 ${
+                              course.status === 'Published' 
+                              ? 'bg-emerald-50/90 text-emerald-600 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50' 
+                              : 'bg-amber-50/90 text-amber-600 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/50'
+                            }`}>
+                               <span className={`size-1.5 rounded-full ${course.status === 'Published' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
+                               {course.status}
+                            </span>
+                         </div>
+                       </div>
 
-                    <div className="p-6 flex flex-col flex-1">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">ID: {course.slug}</p>
-                      <h3 className={`text-lg font-bold text-slate-900 dark:text-white leading-snug mb-4 group-hover:text-[#00BCD4] transition-colors line-clamp-2 ${googleSansAlt.className}`}>
-                        {course.title}
-                      </h3>
-                      
-                      <div className="mt-auto space-y-4">
-                        <div className="flex items-center justify-between text-sm">
-                           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
-                             <span className="material-symbols-outlined text-[18px]">group</span> {course.students} Siswa
+                       <div className="p-6 flex flex-col flex-1">
+                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">ID: {course.slug}</p>
+                         <h3 className={`text-lg font-bold text-slate-900 dark:text-white leading-snug mb-4 group-hover:text-[#00BCD4] transition-colors line-clamp-2 ${googleSansAlt.className}`}>
+                           {course.title}
+                         </h3>
+                         
+                         <div className="mt-auto space-y-4">
+                           <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
+                                <span className="material-symbols-outlined text-[18px]">group</span> {course.students} Siswa
+                              </div>
+                              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
+                                <span className="material-symbols-outlined text-[16px]">update</span> {course.lastUpdated}
+                              </div>
                            </div>
-                           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
-                             <span className="material-symbols-outlined text-[16px]">update</span> {course.lastUpdated}
-                           </div>
-                        </div>
 
-                        <div className="space-y-1.5">
-                           <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                             <span>Kelengkapan Kurikulum</span>
-                             <span>{course.progress}%</span>
+                           <div className="space-y-1.5">
+                              <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                <span>Kelengkapan Kurikulum</span>
+                                <span>{course.progress}%</span>
+                              </div>
+                              <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                <div className={`h-full rounded-full transition-all ${course.progress === 100 ? 'bg-emerald-500' : 'bg-[#00BCD4]'}`} style={{ width: `${course.progress}%` }}></div>
+                              </div>
                            </div>
-                           <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                             <div className={`h-full rounded-full transition-all ${course.progress === 100 ? 'bg-emerald-500' : 'bg-[#00BCD4]'}`} style={{ width: `${course.progress}%` }}></div>
-                           </div>
-                        </div>
 
-                        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-                           <button className="p-2.5 text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors" title="Pengaturan Kelas">
-                             <span className="material-symbols-outlined text-[20px] block">settings</span>
-                           </button>
-                           <Link href={`/course-editor?course=${course.slug}`} className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}>
-                             <span className="material-symbols-outlined text-[18px]">edit_square</span> Edit Kelas
-                           </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+                           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                              <Link href={`/course-editor?course=${course.slug}`} className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}>
+                                <span className="material-symbols-outlined text-[18px]">edit_square</span> Edit Kelas
+                              </Link>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   ))
+                 )}
+               </div>
+            )}
           </div>
         </main>
 
         {/* =========================================
-            ✨ MODAL OVERLAY TAMBAH KELAS (GLASSMORPHISM) ✨
+            MODAL BUAT KELAS BARU
         ========================================= */}
         {isAddModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

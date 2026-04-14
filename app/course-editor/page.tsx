@@ -10,6 +10,7 @@ import OverviewTab from '@/components/editor/OverviewTab';
 import MaterialsTab from '@/components/editor/MaterialsTab';
 import VideosTab from '@/components/editor/VideosTab';
 import AssignmentsTab from '@/components/editor/AssignmentsTab';
+import ReviewsTab from '@/components/editor/ReviewsTab';
 
 const inter = Inter({ subsets: ['latin'] });
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
@@ -37,7 +38,8 @@ function CourseEditorContent() {
     setIsMounted(true);
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'videos' | 'assignments'>('overview');
+  // ✨ FIX TYPESCRIPT: Tambahkan 'reviews' ke dalam union type
+  const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'videos' | 'assignments' | 'reviews'>('overview');
 
   const [basicData, setBasicData] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -68,7 +70,8 @@ function CourseEditorContent() {
     { id: 'overview', label: 'Overview', icon: 'web' },
     { id: 'materials', label: 'Materials', icon: 'menu_book' },
     { id: 'videos', label: 'Videos', icon: 'videocam' },
-    { id: 'assignments', label: 'Assignments', icon: 'assignment' },
+    { id: 'assignments', label: 'Projects', icon: 'task' },
+    { id: 'reviews', label: 'Student Feedback', icon: 'reviews' },
   ];
 
   // FIX: Tunda render UI yang bergantung pada localStorage sampai client siap
@@ -242,7 +245,8 @@ function CourseEditorContent() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as 'overview' | 'materials' | 'videos' | 'assignments')}
+                  // ✨ FIX TYPESCRIPT: Tambahkan 'reviews' ke as type cast
+                  onClick={() => setActiveTab(tab.id as 'overview' | 'materials' | 'videos' | 'assignments' | 'reviews')}
                   className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 whitespace-nowrap overflow-hidden ${
                     isActive 
                     ? 'text-white shadow-sm' 
@@ -267,6 +271,7 @@ function CourseEditorContent() {
           {activeTab === 'materials' && <MaterialsTab courseSlug={courseSlug} />}
           {activeTab === 'videos' && <VideosTab />}
           {activeTab === 'assignments' && <AssignmentsTab />}
+          {activeTab === 'reviews' && <ReviewsTab />}
         </div>
       </main>
     </div>
