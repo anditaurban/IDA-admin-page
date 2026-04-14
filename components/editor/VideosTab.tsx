@@ -223,7 +223,7 @@ export default function VideosTab() {
                <div className="size-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500">
                   <span className="material-symbols-outlined text-[18px]">folder_open</span>
                </div>
-               Batch Kelas
+               Bagian Kelas
              </h3>
              <button onClick={() => setIsBatchModalOpen(true)} className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-white dark:hover:bg-slate-800 p-2 rounded-xl transition-all" title="Tambah Batch">
                  <span className="material-symbols-outlined text-[20px] block">add</span>
