@@ -73,7 +73,7 @@ function CourseEditorContent() {
     { id: 'overview', label: 'Overview', icon: 'web' },
     { id: 'materials', label: 'Materials', icon: 'menu_book' },
     { id: 'videos', label: 'Videos', icon: 'videocam' },
-    { id: 'assignments', label: 'Projects', icon: 'task' },
+    { id: 'assignments', label: 'Assignments', icon: 'task' },
     { id: 'reviews', label: 'Student Feedback', icon: 'reviews' },
   ] as const;
 
