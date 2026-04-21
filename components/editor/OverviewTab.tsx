@@ -18,13 +18,15 @@ const defaultLandingData = {
 
 type RoadmapStepType = typeof defaultLandingData.roadmap[0];
 
-export default function OverviewTab() {
+// ✨ FIX: Menjadikan courseSlug opsional dengan nilai default agar tidak error di TypeScript
+export default function OverviewTab({ courseSlug = 'ngodingai' }: { courseSlug?: string }) {
   // ✨ STATE BARU UNTUK SUB-TABS INTERNAL ✨
   const [activeSubTab, setActiveSubTab] = useState<'description' | 'roadmap' | 'profile'>('description');
 
   const [formData, setFormData] = useState(() => {
     if (typeof window !== 'undefined') {
-      const savedData = localStorage.getItem('db_course_landing');
+      // Data disimpan & dibaca secara terisolasi berdasarkan Slug kelas
+      const savedData = localStorage.getItem(`db_course_landing_${courseSlug}`);
       if (savedData) return { ...defaultLandingData, ...JSON.parse(savedData) };
     }
     return defaultLandingData;
@@ -35,7 +37,7 @@ export default function OverviewTab() {
 
   const saveChanges = (newData: typeof formData) => {
     setFormData(newData);
-    localStorage.setItem('db_course_landing', JSON.stringify(newData));
+    localStorage.setItem(`db_course_landing_${courseSlug}`, JSON.stringify(newData));
   };
 
   const handleChange = (field: string, value: string) => {
@@ -121,7 +123,6 @@ export default function OverviewTab() {
         ==================================================== */}
         {activeSubTab === 'description' && (
           <div className="bg-white dark:bg-[#111111] p-8 md:p-10 rounded-4xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] flex flex-col gap-8 relative overflow-hidden">
-            
             <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800/60 pb-6">
               <div className="size-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center border border-indigo-100 dark:border-indigo-500/20 text-indigo-500">
                   <span className="material-symbols-outlined text-[24px]">description</span>
@@ -206,7 +207,6 @@ export default function OverviewTab() {
         ==================================================== */}
         {activeSubTab === 'roadmap' && (
           <div className="bg-white dark:bg-[#111111] p-8 md:p-10 rounded-4xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] flex flex-col gap-8 relative overflow-hidden">
-            
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-6 relative z-10">
                 <div className="flex items-center gap-4">
                   <div className="size-12 rounded-2xl bg-cyan-50 dark:bg-cyan-500/10 flex items-center justify-center border border-cyan-100 dark:border-cyan-500/20 text-[#00BCD4]">
@@ -305,7 +305,6 @@ export default function OverviewTab() {
         ==================================================== */}
         {activeSubTab === 'profile' && (
           <div className="bg-white dark:bg-[#111111] p-8 md:p-10 rounded-4xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] flex flex-col gap-8 relative overflow-hidden">
-            
             <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800/60 pb-6">
               <div className="size-12 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center border border-emerald-100 dark:border-emerald-500/20 text-emerald-500">
                   <span className="material-symbols-outlined text-[24px]">badge</span>
@@ -360,7 +359,6 @@ export default function OverviewTab() {
                     />
                   </div>
               </div>
-
             </div>
           </div>
         )}

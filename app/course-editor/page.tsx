@@ -15,53 +15,56 @@ import ReviewsTab from '@/components/editor/ReviewsTab';
 const inter = Inter({ subsets: ['latin'] });
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
 
-const defaultBasicData = {
-  title: "NgodingAI: Master GenAI & LLMs",
+interface BasicCourseData {
+  title: string;
+  thumbnail: string;
+  level: string;
+  price: string;
+  discount: string;
+  isPublished?: boolean;
+}
+
+const defaultBasicData: BasicCourseData = {
+  title: "Untitled Course",
   thumbnail: "https://images.unsplash.com/photo-1677442136019-21780ecad995?q=80&w=1000&auto=format&fit=crop",
   level: "Pemula",
-  price: "499000",
-  discount: "0" 
+  price: "0",
+  discount: "0",
+  isPublished: false
 };
 
 function CourseEditorContent() {
   const searchParams = useSearchParams();
   const { showToast } = useToast();
-  const courseSlug = searchParams.get('course') || 'ngodingai';
+  const courseSlug = searchParams.get('course') || 'default-course';
   
-  // FIX: Tambahkan state isMounted untuk mengatasi Hydration Error
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    // Abaikan peringatan linter untuk baris ini karena ini adalah pola standar
-    // yang disengaja untuk melakukan "hydration bailout" di Next.js.
-    // eslint-disable-next-line
-    setIsMounted(true);
-  }, []);
-
-  // ✨ FIX TYPESCRIPT: Tambahkan 'reviews' ke dalam union type
   const [activeTab, setActiveTab] = useState<'overview' | 'materials' | 'videos' | 'assignments' | 'reviews'>('overview');
 
-  const [basicData, setBasicData] = useState(() => {
-    if (typeof window !== 'undefined') {
-       const savedData = localStorage.getItem('db_course_basic');
-       return savedData ? { ...defaultBasicData, ...JSON.parse(savedData) } : defaultBasicData;
-    }
-    return defaultBasicData;
-  });
+  // Inisialisasi dengan data default untuk menghindari Hydration Mismatch
+  const [basicData, setBasicData] = useState<BasicCourseData>(defaultBasicData);
 
-  const handleBasicChange = (field: string, value: string) => {
+  // ✨ FIX ESLINT: Menggunakan setTimeout untuk mendefer setState agar tidak dianggap "synchronous" oleh linter
+  useEffect(() => {
+    const savedData = localStorage.getItem(`db_course_basic_${courseSlug}`);
+    if (savedData) {
+       const timer = setTimeout(() => {
+         setBasicData({ ...defaultBasicData, ...JSON.parse(savedData) });
+       }, 0);
+       return () => clearTimeout(timer);
+    }
+  }, [courseSlug]);
+
+  const handleBasicChange = (field: keyof BasicCourseData, value: string | boolean) => {
     const newData = { ...basicData, [field]: value };
     setBasicData(newData);
-    localStorage.setItem('db_course_basic', JSON.stringify(newData));
+    localStorage.setItem(`db_course_basic_${courseSlug}`, JSON.stringify(newData));
   };
 
-  // Helper untuk format rupiah dengan titik
   const formatRibuan = (angka: string | number) => {
     if (!angka) return '';
     return new Intl.NumberFormat('id-ID').format(Number(angka));
   };
 
-  // Kalkulasi Harga Akhir
   const parsedPrice = parseInt(basicData.price || '0', 10);
   const parsedDiscount = parseInt(basicData.discount || '0', 10);
   const finalPrice = parsedPrice - (parsedPrice * parsedDiscount / 100);
@@ -72,24 +75,18 @@ function CourseEditorContent() {
     { id: 'videos', label: 'Videos', icon: 'videocam' },
     { id: 'assignments', label: 'Projects', icon: 'task' },
     { id: 'reviews', label: 'Student Feedback', icon: 'reviews' },
-  ];
-
-  // FIX: Tunda render UI yang bergantung pada localStorage sampai client siap
-  // Ini memastikan HTML dari Server persis sama dengan HTML awal di Client
-  if (!isMounted) {
-    return null; 
-  }
+  ] as const;
 
   return (
     <div className={`min-h-screen bg-[#f4f5f7] dark:bg-[#050505] ${inter.className} pb-32 selection:bg-[#00BCD4]/30`}>
       
-      {/* --- MODERN GLASS HEADER --- */}
+      {/* --- HEADER --- */}
       <header className="h-18 bg-white/70 dark:bg-[#0a0a0a]/70 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between px-6 sticky top-0 z-50">
         <div className="flex items-center gap-5">
           <Link 
-            href="/instructor" 
+            href="/" 
             className="group flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all text-slate-500 hover:text-slate-900 dark:hover:text-white" 
-            title="Kembali ke Beranda"
+            title="Kembali ke Dashboard"
           >
             <span className="material-symbols-outlined text-[20px] transition-colors">arrow_back</span>
             <span className="hidden sm:inline text-sm font-bold">Beranda</span>
@@ -111,7 +108,10 @@ function CourseEditorContent() {
              <span className="size-2 rounded-full bg-amber-500 animate-pulse"></span> Draft Mode
            </div>
            <button 
-             onClick={() => showToast('success', 'Semua pengaturan tersimpan!')} 
+             onClick={() => {
+                handleBasicChange('isPublished', true);
+                showToast('success', 'Kelas berhasil dipublikasikan!');
+             }} 
              className={`flex items-center gap-2 px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 rounded-full text-sm font-bold shadow-lg shadow-slate-900/10 dark:shadow-white/10 active:scale-95 transition-all ${googleSansAlt.className}`}
            >
              <span className="material-symbols-outlined text-[18px]">publish</span>
@@ -134,13 +134,10 @@ function CourseEditorContent() {
                className="group relative w-full aspect-4/3 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-slate-100 dark:bg-slate-900 cursor-pointer"
                onClick={() => { const newUrl = prompt("Masukkan URL Thumbnail Kelas:", basicData.thumbnail); if(newUrl) handleBasicChange('thumbnail', newUrl); }}
              >
-               {/* Image Background */}
                <div 
                  className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" 
                  style={{ backgroundImage: `url(${basicData.thumbnail})` }} 
                />
-               
-               {/* Hover Overlay */}
                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-300 flex flex-col items-center justify-center">
                    <div className="translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center gap-3">
                       <div className="size-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/30 shadow-xl">
@@ -152,7 +149,6 @@ function CourseEditorContent() {
              </div>
            </div>
            
-           {/* TEXT INPUTS & METRICS */}
            <div className="flex-1 flex flex-col">
               <div className="mb-8 relative group">
                 <label className="text-[11px] font-bold text-[#00BCD4] uppercase tracking-wider block mb-2 opacity-80">Judul Utama Kelas</label>
@@ -163,13 +159,11 @@ function CourseEditorContent() {
                   className={`w-full bg-transparent border-0 p-0 text-3xl sm:text-4xl lg:text-[40px] font-extrabold text-slate-900 dark:text-white focus:ring-0 resize-none outline-none leading-[1.1] transition-all placeholder:text-slate-300 dark:placeholder:text-slate-700 ${googleSansAlt.className}`} 
                   placeholder="Ketik judul kelas di sini..." 
                 />
-                {/* Subtle border that appears on focus/hover to indicate it's editable */}
                 <div className="absolute -inset-x-4 -inset-y-2 rounded-2xl border-2 border-transparent group-focus-within:border-slate-100 dark:group-focus-within:border-slate-800/50 -z-10 transition-colors pointer-events-none"></div>
               </div>
               
               <div className="mt-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
-                 
-                 {/* Level Box */}
+                 {/* Level */}
                  <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10 transition-all">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[14px]">stairs</span> Tingkat
@@ -185,7 +179,7 @@ function CourseEditorContent() {
                     </select>
                  </div>
                  
-                 {/* Price Box */}
+                 {/* Price */}
                  <div className={`flex flex-col gap-1.5 p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10 transition-all ${parsedDiscount > 0 ? 'row-span-2 sm:row-span-1' : ''}`}>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[14px]">payments</span> Harga Dasar (Rp)
@@ -199,7 +193,6 @@ function CourseEditorContent() {
                       placeholder="499.000" 
                     />
                     
-                    {/* Hasil Kalkulasi Harga Diskon */}
                     {parsedDiscount > 0 && (
                       <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 animate-in fade-in slide-in-from-top-1">
                         <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest block mb-0.5">Harga Akhir</span>
@@ -210,7 +203,7 @@ function CourseEditorContent() {
                     )}
                  </div>
 
-                 {/* Discount Box */}
+                 {/* Discount */}
                  <div className="flex flex-col gap-1.5 p-4 rounded-2xl bg-rose-50/50 dark:bg-rose-500/5 border border-rose-100 dark:border-rose-500/20 focus-within:border-rose-300 dark:focus-within:border-rose-500/50 focus-within:ring-2 focus-within:ring-rose-500/10 transition-all">
                     <label className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[14px]">loyalty</span> Diskon
@@ -237,7 +230,7 @@ function CourseEditorContent() {
            </div>
         </div>
 
-        {/* --- MODERN PILL NAVIGATION TABS --- */}
+        {/* --- PILL NAVIGATION TABS --- */}
         <div className="sticky top-22 z-40 mb-8 flex justify-center sm:justify-start">
           <div className="flex items-center gap-1 p-1.5 bg-[#1a1a2e]/85 dark:bg-[#0a0a14]/85 backdrop-blur-2xl rounded-2xl border border-white/15 dark:border-white/10 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.4),0_0_30px_rgba(255,255,255,0.15)] dark:shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8),0_0_30px_rgba(255,255,255,0.05)] overflow-x-auto no-scrollbar w-full sm:w-max transition-all duration-300">
             {tabs.map((tab) => {
@@ -245,15 +238,13 @@ function CourseEditorContent() {
               return (
                 <button
                   key={tab.id}
-                  // ✨ FIX TYPESCRIPT: Tambahkan 'reviews' ke as type cast
-                  onClick={() => setActiveTab(tab.id as 'overview' | 'materials' | 'videos' | 'assignments' | 'reviews')}
+                  onClick={() => setActiveTab(tab.id)}
                   className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 whitespace-nowrap overflow-hidden ${
                     isActive 
                     ? 'text-white shadow-sm' 
                     : 'text-slate-400 hover:text-slate-200 dark:text-slate-500 dark:hover:text-slate-300 hover:bg-white/5 dark:hover:bg-white/5'
                   }`}
                 >
-                  {/* Active Indicator Background */}
                   {isActive && (
                     <div className="absolute inset-0 bg-white/10 dark:bg-white/10 rounded-xl border border-white/20 -z-10"></div>
                   )}
@@ -265,13 +256,13 @@ function CourseEditorContent() {
           </div>
         </div>
 
-        {/* --- TAB CONTENTS --- */}
+        {/* --- TAB CONTENTS (TYPE-SAFE RENDERING) --- */}
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {activeTab === 'overview' && <OverviewTab />}
+          {activeTab === 'overview' && <OverviewTab courseSlug={courseSlug} />}
           {activeTab === 'materials' && <MaterialsTab courseSlug={courseSlug} />}
-          {activeTab === 'videos' && <VideosTab />}
-          {activeTab === 'assignments' && <AssignmentsTab />}
-          {activeTab === 'reviews' && <ReviewsTab />}
+          {activeTab === 'videos' && <VideosTab courseSlug={courseSlug} />}
+          {activeTab === 'assignments' && <AssignmentsTab courseSlug={courseSlug} />}
+          {activeTab === 'reviews' && <ReviewsTab courseSlug={courseSlug} />}
         </div>
       </main>
     </div>

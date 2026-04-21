@@ -10,10 +10,11 @@ interface Submission {
   projectTitle: string;
   link: string;
   status: 'Needs Review' | 'Graded';
-  score: number | null; // 1 to 5 stars
+  score: number | null;
   feedback: string;
 }
 
+// ✨ DATA AWAL (Dari versi lama Anda untuk simulasi)
 const initialSubmissions: Submission[] = [
   { id: 's1', studentName: 'Fayyadh', projectTitle: 'Final Project: Clone ChatGPT UI', link: 'github.com/fayyadh/gpt-clone', status: 'Needs Review', score: null, feedback: '' },
   { id: 's2', studentName: 'Andita', projectTitle: 'Final Project: Clone ChatGPT UI', link: 'drive.google.com/file/xyz', status: 'Graded', score: 5, feedback: 'Excellent work! The UI is very accurate and responsive.' },
@@ -21,11 +22,22 @@ const initialSubmissions: Submission[] = [
   { id: 's4', studentName: 'Siti Aminah', projectTitle: 'Final Project: Clone ChatGPT UI', link: 'github.com/siti/gpt-clone', status: 'Needs Review', score: null, feedback: '' },
 ];
 
-export default function AssignmentsTab() {
+export default function AssignmentsTab({ courseSlug = 'default-course' }: { courseSlug?: string }) {
   const { showToast } = useToast();
 
-  // State Data Submissions & Search
-  const [submissions, setSubmissions] = useState<Submission[]>(initialSubmissions);
+  // ✨ STATE: Menggabungkan logic LocalStorage dengan Data Awal
+  const [submissions, setSubmissions] = useState<Submission[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`db_course_projects_${courseSlug}`);
+      if (saved) return JSON.parse(saved);
+      
+      // Jika kelas baru (selain default), mungkin Anda ingin kosong, 
+      // tapi untuk simulasi kita gunakan initialSubmissions
+      return initialSubmissions; 
+    }
+    return initialSubmissions;
+  });
+  
   const [searchQuery, setSearchQuery] = useState('');
 
   // States Modal Grading/Review
@@ -34,6 +46,11 @@ export default function AssignmentsTab() {
   const [gradingScore, setGradingScore] = useState<number>(0);
   const [gradingFeedback, setGradingFeedback] = useState('');
   const [hoveredStar, setHoveredStar] = useState<number>(0);
+
+  const saveSubmissions = (data: Submission[]) => {
+    setSubmissions(data);
+    localStorage.setItem(`db_course_projects_${courseSlug}`, JSON.stringify(data));
+  };
 
   const openGradeModal = (sub: Submission) => {
     setSelectedSubmission(sub);
@@ -53,7 +70,7 @@ export default function AssignmentsTab() {
       : sub
     );
     
-    setSubmissions(updatedSubmissions);
+    saveSubmissions(updatedSubmissions);
     showToast('success', 'Review successfully saved!');
     setIsGradeModalOpen(false);
   };
@@ -167,8 +184,9 @@ export default function AssignmentsTab() {
 
            {/* Modern Table List */}
            {filteredSubmissions.length === 0 ? (
-              <div className="text-center py-10 text-slate-400 text-sm italic">
-                No submissions found matching &quot;{searchQuery}&quot;.
+              <div className="text-center py-16 flex flex-col items-center justify-center gap-4 bg-[#fafafa] dark:bg-[#161616] rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                <span className="material-symbols-outlined text-[48px] text-slate-300 dark:text-slate-700">inventory_2</span>
+                <p className="text-sm font-bold text-slate-500">No projects submitted yet for this course.</p>
               </div>
            ) : (
              <div className="overflow-x-auto no-scrollbar">
@@ -262,7 +280,7 @@ export default function AssignmentsTab() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
            <div className="absolute inset-0 bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsGradeModalOpen(false)}></div>
            
-           <div className="bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 w-full max-w-lg rounded-4xl shadow-2xl relative z-10 animate-in zoom-in-95 duration-200 overflow-hidden">
+           <div className="bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 w-full max-lg rounded-4xl shadow-2xl relative z-10 animate-in zoom-in-95 duration-200 overflow-hidden">
               <div className="h-1.5 w-full bg-amber-500"></div>
               <div className="p-6 md:p-8 flex flex-col gap-6">
                  
@@ -280,7 +298,6 @@ export default function AssignmentsTab() {
                     </button>
                  </div>
 
-                 {/* Project Info Summary */}
                  <div className="bg-[#fafafa] dark:bg-[#161616] p-4 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project Submitted</p>
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3">{selectedSubmission.projectTitle}</p>
@@ -291,8 +308,6 @@ export default function AssignmentsTab() {
                  </div>
 
                  <form onSubmit={handleSaveReview} className="space-y-6">
-                    
-                    {/* Star Rating Input */}
                     <div className="flex flex-col items-center justify-center p-4 bg-amber-50/50 dark:bg-amber-900/10 rounded-3xl border border-amber-100 dark:border-amber-900/30">
                        <label className="text-xs font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-3">Overall Score</label>
                        <div className="flex items-center gap-2">
@@ -323,7 +338,6 @@ export default function AssignmentsTab() {
                        </span>
                     </div>
                     
-                    {/* Feedback Textarea */}
                     <div className="space-y-2">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block">Feedback / Comments</label>
                       <textarea 

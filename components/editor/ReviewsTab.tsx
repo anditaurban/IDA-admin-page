@@ -13,6 +13,7 @@ interface CourseReview {
   instructorReply?: string;
 }
 
+// ✨ DATA AWAL (Dari versi lama Anda)
 const defaultReviews: CourseReview[] = [
   {
     id: 'rev_1',
@@ -38,15 +39,16 @@ const defaultReviews: CourseReview[] = [
   }
 ];
 
-export default function ReviewsTab() {
+export default function ReviewsTab({ courseSlug = 'default-course' }: { courseSlug?: string }) {
   const { showToast } = useToast();
 
+  // ✨ STATE: Menggunakan courseSlug untuk isolasi data antar kelas
   const [reviews, setReviews] = useState<CourseReview[]>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('db_course_reviews');
+      const saved = localStorage.getItem(`db_course_reviews_${courseSlug}`);
       if (saved) return JSON.parse(saved);
     }
-    return defaultReviews;
+    return defaultReviews; // Fallback ke data dummy jika data di localStorage kosong
   });
 
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export default function ReviewsTab() {
 
   const saveReviews = (data: CourseReview[]) => {
     setReviews(data);
-    localStorage.setItem('db_course_reviews', JSON.stringify(data));
+    localStorage.setItem(`db_course_reviews_${courseSlug}`, JSON.stringify(data));
   };
 
   const handleReplySubmit = (e: React.FormEvent, reviewId: string) => {
@@ -107,7 +109,6 @@ export default function ReviewsTab() {
     );
   };
 
-  // Kalkulasi Statistik Rating
   const stats = useMemo(() => {
     const total = reviews.length;
     const sum = reviews.reduce((acc, rev) => acc + rev.rating, 0);
@@ -145,7 +146,6 @@ export default function ReviewsTab() {
 
          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
             
-            {/* Average Rating Big Box */}
             <div className="md:col-span-4 flex flex-col items-center justify-center py-8 px-4 bg-linear-to-b from-amber-50/50 to-[#fafafa] dark:from-amber-900/10 dark:to-[#161616] rounded-3xl border border-amber-100/50 dark:border-amber-900/20 shadow-inner">
                <span className={`text-6xl font-extrabold text-slate-900 dark:text-white mb-2 ${googleSansAlt.className}`}>{stats.average}</span>
                <div className="flex items-center gap-1.5 mb-3">
@@ -163,7 +163,6 @@ export default function ReviewsTab() {
                <span className="text-[11px] font-medium text-amber-600/70 dark:text-amber-500/70 mt-1.5 bg-amber-100/50 dark:bg-amber-900/30 px-3 py-1 rounded-full">Based on {stats.total} reviews</span>
             </div>
 
-            {/* Distribution Bars */}
             <div className="md:col-span-8 flex flex-col gap-3.5 w-full px-2">
                {stats.distribution.map((item) => (
                  <div key={item.star} className="flex items-center gap-4 group">
@@ -210,7 +209,7 @@ export default function ReviewsTab() {
             {reviews.length === 0 ? (
                <div className="text-center py-16 flex flex-col items-center justify-center gap-4 bg-[#fafafa] dark:bg-[#161616] rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
                  <span className="material-symbols-outlined text-[48px] text-slate-300 dark:text-slate-700">rate_review</span>
-                 <p className="text-sm font-bold text-slate-500">No reviews yet. Check back later!</p>
+                 <p className="text-sm font-bold text-slate-500">No reviews yet for this course.</p>
                </div>
             ) : (
                reviews.map((review) => (
@@ -221,13 +220,11 @@ export default function ReviewsTab() {
                       <div className="absolute left-6 top-14 bottom-10 w-px bg-slate-200 dark:bg-slate-800 -z-10 hidden sm:block"></div>
                     )}
 
-                    {/* User Avatar */}
                     <div className="size-12 rounded-full bg-linear-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-extrabold shrink-0 border-2 border-white dark:border-[#111111] shadow-sm uppercase z-10">
                       {review.studentName.charAt(0)}
                     </div>
 
                     <div className="flex-1 min-w-0">
-                       {/* Review Header */}
                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-2">
                           <h5 className="font-extrabold text-slate-900 dark:text-white text-base">{review.studentName}</h5>
                           <span className="hidden sm:block size-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
@@ -236,20 +233,16 @@ export default function ReviewsTab() {
                           </span>
                        </div>
                        
-                       {/* Rating Stars */}
                        <div className="mb-3 bg-[#fafafa] dark:bg-[#161616] w-fit px-3 py-1.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                          {renderStars(review.rating)}
                        </div>
 
-                       {/* Review Text */}
                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-4">
                          {review.comment}
                        </p>
 
-                       {/* Action / Reply Area */}
                        <div className="mt-2">
                          {replyingTo === review.id ? (
-                           /* --- INLINE EDIT/REPLY FORM --- */
                            <form onSubmit={(e) => handleReplySubmit(e, review.id)} className="animate-in fade-in zoom-in-95 duration-200 bg-[#fafafa] dark:bg-[#161616] p-4 rounded-3xl border border-amber-200 dark:border-amber-900/30 shadow-inner">
                               <div className="flex items-center gap-2 mb-3">
                                  <span className="material-symbols-outlined text-[16px] text-amber-500">edit_note</span>
@@ -269,7 +262,6 @@ export default function ReviewsTab() {
                               </div>
                            </form>
                          ) : review.instructorReply ? (
-                           /* --- INSTRUCTOR REPLY BUBBLE --- */
                            <div className="bg-amber-50/50 dark:bg-amber-500/5 p-5 rounded-3xl rounded-tl-sm border border-amber-100 dark:border-amber-500/10 relative group/reply transition-all hover:border-amber-200 dark:hover:border-amber-500/20 mt-1">
                               
                               <div className="flex items-center justify-between mb-2">
@@ -280,7 +272,6 @@ export default function ReviewsTab() {
                                     <span className="text-xs font-extrabold text-amber-700 dark:text-amber-500">Instructor Reply</span>
                                  </div>
                                  
-                                 {/* Contextual Action Buttons (Edit / Delete) */}
                                  <div className="flex items-center gap-1 opacity-0 group-hover/reply:opacity-100 transition-opacity">
                                     <button 
                                       onClick={() => handleEditReply(review.id, review.instructorReply as string)} 
@@ -304,7 +295,6 @@ export default function ReviewsTab() {
                               </p>
                            </div>
                          ) : (
-                           /* --- REPLY ACTION BUTTON --- */
                            <button 
                              onClick={() => { setReplyingTo(review.id); setReplyText(''); }} 
                              className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 flex items-center gap-1.5 transition-colors bg-slate-100 dark:bg-slate-800/50 hover:bg-amber-50 dark:hover:bg-amber-900/20 px-4 py-2 rounded-xl border border-transparent hover:border-amber-200 dark:hover:border-amber-800/50"

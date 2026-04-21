@@ -73,12 +73,13 @@ const defaultCurriculum: CurriculumData = {
   }
 };
 
-export default function VideosTab() {
+// ✨ FIX: Menambahkan prop courseSlug opsional agar bisa sinkron dan tidak error di TypeScript
+export default function VideosTab({ courseSlug = 'default-course' }: { courseSlug?: string }) {
   const { showToast } = useToast();
   
   const [data, setData] = useState<CurriculumData>(() => {
     if (typeof window !== 'undefined') {
-      const savedData = localStorage.getItem('db_course_classroom');
+      const savedData = localStorage.getItem(`db_course_classroom_${courseSlug}`);
       if (savedData) return JSON.parse(savedData);
     }
     return defaultCurriculum;
@@ -86,7 +87,7 @@ export default function VideosTab() {
 
   const [activeBatch, setActiveBatch] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      const savedData = localStorage.getItem('db_course_classroom');
+      const savedData = localStorage.getItem(`db_course_classroom_${courseSlug}`);
       if (savedData) {
          const parsed = JSON.parse(savedData);
          if (parsed.batches && parsed.batches.length > 0) return parsed.batches[0].id;
@@ -111,7 +112,7 @@ export default function VideosTab() {
 
   const saveData = (newData: CurriculumData) => {
     setData(newData);
-    localStorage.setItem('db_course_classroom', JSON.stringify(newData));
+    localStorage.setItem(`db_course_classroom_${courseSlug}`, JSON.stringify(newData));
   };
 
   const activeVideos = data.content[activeBatch] || [];
