@@ -4,6 +4,10 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DM_Sans, Inter } from 'next/font/google';
+import Cookies from 'js-cookie';
+
+// 1. TAMBAHKAN IMPORT INI DI BAGIAN ATAS
+import SessionGuard from '@/components/SessionGuard';
 
 const inter = Inter({ subsets: ['latin'] });
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
@@ -25,6 +29,14 @@ interface CourseItem {
   progress: number;
 }
 
+// ✨ FIX: Menambahkan interface untuk tipe User Profile agar tidak menggunakan 'any'
+interface UserProfile {
+  email?: string;
+  role?: string;
+  owner_id?: string | number;
+  [key: string]: unknown;
+}
+
 export default function InstructorDashboard() {
   const router = useRouter();
   const [activeMenu, setActiveMenu] = useState('dashboard');
@@ -33,11 +45,35 @@ export default function InstructorDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // STATE MODAL
+  // STATE MODAL & USER PROFILE
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCourseTitle, setNewCourseTitle] = useState('');
+  
+  // ✨ FIX: Menggunakan interface UserProfile alih-alih any
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
-  // FUNGSI SINKRONISASI LOCALSTORAGE
+  // ✨ FIX: PROTEKSI HALAMAN LOKAL & AMBIL DATA PROFIL
+  useEffect(() => {
+    const sessionToken = Cookies.get('auth_session') || Cookies.get('token');
+    
+    // Jika tidak ada token login, paksa pindah ke halaman login
+    if (!sessionToken) {
+      router.replace('/login');
+      return;
+    }
+
+    // Jika ada token, ambil profil dari localStorage
+    const savedProfile = localStorage.getItem('user_profile');
+    if (savedProfile) {
+      // ✨ FIX ESLINT: Menggunakan setTimeout untuk mendefer setState
+      const timer = setTimeout(() => {
+        setUserProfile(JSON.parse(savedProfile));
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [router]);
+
+  // FUNGSI SINKRONISASI LOCALSTORAGE UNTUK KELAS
   useEffect(() => {
     const loadCoursesFromStorage = () => {
       try {
@@ -52,7 +88,7 @@ export default function InstructorDashboard() {
              const slug = key.replace('db_course_basic_', '');
              
              let progress = 45; // Default progress
-             const curriculumStr = localStorage.getItem(`db_course_classroom`);
+             const curriculumStr = localStorage.getItem(`db_course_classroom_${slug}`);
              if (curriculumStr && curriculumStr !== '[]') {
                 progress = 100; // Mock: Jika ada data kelas, progress naik
              }
@@ -89,9 +125,17 @@ export default function InstructorDashboard() {
       }
     };
 
-    loadCoursesFromStorage();
+    // ✨ FIX ESLINT: Mendefer eksekusi awal agar tidak terjadi sync state update
+    const initTimer = setTimeout(() => {
+      loadCoursesFromStorage();
+    }, 0);
+
     window.addEventListener('storage', loadCoursesFromStorage);
-    return () => window.removeEventListener('storage', loadCoursesFromStorage);
+    
+    return () => {
+      clearTimeout(initTimer);
+      window.removeEventListener('storage', loadCoursesFromStorage);
+    };
   }, []);
   
   const generateSlug = (title: string) => {
@@ -104,25 +148,35 @@ export default function InstructorDashboard() {
     
     const slug = generateSlug(newCourseTitle);
     
-    // ✨ FIX: Menyiapkan kerangka data awal yang lengkap agar Editor tidak error
     const newCourseData = {
        title: newCourseTitle,
        slug: slug,
-       thumbnail: "https://images.unsplash.com/photo-1677442136019-21780ecad995?q=80&w=1000&auto=format&fit=crop", // Gambar default
+       thumbnail: "https://images.unsplash.com/photo-1677442136019-21780ecad995?q=80&w=1000&auto=format&fit=crop",
        level: "Pemula",
        price: "0",
        discount: "0",
        isPublished: false
     };
     
-    // Simpan data awal kelas ke localStorage sebagai "session" lokal
     localStorage.setItem(`db_course_basic_${slug}`, JSON.stringify(newCourseData));
 
     setIsAddModalOpen(false);
     setNewCourseTitle('');
     
-    // Lempar user ke halaman editor dengan membawa ID (slug) kelas di URL
     router.push(`/course-editor?course=${slug}`);
+  };
+
+  // ✨ FIX: FUNGSI LOGOUT
+  const handleLogout = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // Hapus semua jejak otentikasi
+    Cookies.remove('auth_session');
+    Cookies.remove('token');
+    localStorage.removeItem('user_profile');
+    localStorage.removeItem('instructor_owner_id');
+    
+    // Arahkan ke halaman login
+    router.replace('/login');
   };
 
   const filteredCourses = courses.filter(course => 
@@ -130,8 +184,18 @@ export default function InstructorDashboard() {
     course.slug.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Mengambil nama depan dari email/username (misal: fayyadh@... -> Fayyadh)
+  const getDisplayName = () => {
+    if (!userProfile) return 'Instruktur';
+    const emailName = userProfile.email ? userProfile.email.split('@')[0] : 'User';
+    return emailName.charAt(0).toUpperCase() + emailName.slice(1);
+  };
+
   return (
     <div className={`flex min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] ${inter.className}`}>
+      
+      {/* 2. PANGGIL KOMPONEN SESSION GUARD DI SINI (Tepat di bawah pembuka div utama) */}
+      <SessionGuard />
       
       {/* =========================================
           SIDEBAR NAVIGATION
@@ -171,10 +235,10 @@ export default function InstructorDashboard() {
         </nav>
 
         <div className="p-6 border-t border-slate-200 dark:border-slate-800">
-           <Link href="#" className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
+           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
               <span className="material-symbols-outlined text-[20px]">logout</span>
               Keluar Panel
-           </Link>
+           </button>
         </div>
       </aside>
 
@@ -195,11 +259,18 @@ export default function InstructorDashboard() {
             <div className="h-8 w-px bg-slate-200 dark:bg-slate-800"></div>
             <div className="flex items-center gap-3 cursor-pointer">
               <div className="text-right hidden sm:block">
-                <p className={`text-sm font-bold text-slate-900 dark:text-white leading-tight ${googleSansAlt.className}`}>Andita Permata</p>
-                <p className="text-[10px] font-bold text-[#00BCD4] uppercase tracking-wider">Expert Mentor</p>
+                {/* ✨ FIX: Menampilkan nama dan role dinamis dari API Login */}
+                <p className={`text-sm font-bold text-slate-900 dark:text-white leading-tight ${googleSansAlt.className}`}>
+                  {getDisplayName()}
+                </p>
+                <p className="text-[10px] font-bold text-[#00BCD4] uppercase tracking-wider">
+                  {userProfile?.role || 'Mentor'}
+                </p>
               </div>
               <div className="size-10 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-[#00BCD4] overflow-hidden relative">
-                 <div className="absolute inset-0 flex items-center justify-center text-slate-400 font-bold">AP</div>
+                 <div className="absolute inset-0 flex items-center justify-center text-slate-400 font-bold uppercase">
+                   {getDisplayName().substring(0, 2)}
+                 </div>
               </div>
             </div>
           </div>
@@ -212,7 +283,7 @@ export default function InstructorDashboard() {
             <div className="absolute top-[-50%] right-[-10%] w-[50%] h-[200%] bg-[#00BCD4]/20 blur-[100px] rounded-full pointer-events-none"></div>
             <div className="relative z-10 text-white">
               <h2 className={`text-3xl md:text-4xl font-extrabold tracking-tight mb-2 ${googleSansAlt.className}`}>
-                Selamat datang, Andita! 👋
+                Selamat datang, {getDisplayName()}! 👋
               </h2>
               <p className="text-slate-300 font-medium">Berikut adalah ringkasan performa kelas dan siswa Anda hari ini.</p>
             </div>
@@ -333,10 +404,8 @@ export default function InstructorDashboard() {
         ========================================= */}
         {isAddModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-             {/* Backdrop */}
              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={() => setIsAddModalOpen(false)}></div>
              
-             {/* Modal Box */}
              <div className="bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 w-full max-w-md rounded-3xl shadow-2xl relative z-10 animate-in zoom-in-95 duration-200 overflow-hidden">
                 <div className="h-2 w-full bg-[#00BCD4]"></div>
                 <div className="p-6 md:p-8">
