@@ -1,9 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import Cookies from 'js-cookie';
 import { DM_Sans } from 'next/font/google';
 import { useToast } from '@/components/ui/ToastProvider';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
+
+// --- API CONFIGURATION ---
+const RAW_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+const BASE_URL = RAW_BASE_URL.endsWith('/') ? RAW_BASE_URL.slice(0, -1) : RAW_BASE_URL;
+const ENV_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN || '';
+const OWNER_ID = process.env.NEXT_PUBLIC_OWNER_ID || '';
+
+// --- INTERFACES ---
+interface ApiVideo {
+  video_id: number;
+  video_url: string;
+  video_title: string;
+  platform_type: string;
+  video_duration: string;
+}
+
+interface ApiBatch {
+  batch_id: number;
+  owner_id: number;
+  course_id: number;
+  batch_period: string;
+  batch_name: string;
+  videos: ApiVideo[];
+}
 
 interface VideoItem {
   id: string;
@@ -16,6 +41,7 @@ interface VideoItem {
 interface Batch {
   id: string;
   name: string;
+  period?: string;
 }
 
 interface CurriculumData {
@@ -23,113 +49,146 @@ interface CurriculumData {
   content: Record<string, VideoItem[]>;
 }
 
-// Data Default Lengkap (Batch 1 - 7)
-const defaultCurriculum: CurriculumData = {
+// --- DATA FALLBACK / SIMULASI ---
+const fallbackCurriculum: CurriculumData = {
   batches: [
-    { id: "batch_7", name: "Batch 7 (Januari 2026)" },
-    { id: "batch_6", name: "Batch 6 (Desember 2025)" },
-    { id: "batch_5", name: "Batch 5 (Desember 2025)" },
-    { id: "batch_4", name: "Batch 4 (November 2025)" },
-    { id: "batch_3", name: "Batch 3 (Oktober 2025)" },
-    { id: "batch_2", name: "Batch 2 (Juni 2025)" },
-    { id: "batch_1", name: "Batch 1 (Mei 2025)" }
+    { id: "7", name: "NgodingAi Batch 7", period: "Januari 2026" },
+    { id: "6", name: "NgodingAi Batch 6", period: "Desember 2025" }
   ],
   content: {
-    batch_1: [
-      { id: "b1d1", type: "gdrive", title: "Day 1 - 20 Mei 2025", url: "1RILbQsHLA_E1YT6JFndO5Hwxw6pn26fi", duration: "02:05:54" },
-      { id: "b1d2", type: "gdrive", title: "Day 2 - 21 Mei 2025", url: "1ZxkDSbyiRgd5b-HAs51kgAwEkVyXlygr", duration: "01:59:40" },
-      { id: "b1d3", type: "gdrive", title: "Day 3 - 22 Mei 2025", url: "1VWWyAfsrkbIY9WnmYEJ99exbnS7WbTbs", duration: "02:16:25" }
+    "7": [
+      { id: "19", type: "gdrive", title: "Day-1", url: "https://drive.google.com/file/d/1rVIDr55jXejpwJ3EQYzA_H6dzyE96wtv/view?usp=drive_link", duration: "01:52:46" },
+      { id: "20", type: "gdrive", title: "Day-2", url: "https://drive.google.com/file/d/17AjylJqFSPI7utiInJSLB12VOPdliYLM/view?usp=drive_link", duration: "01:41:26" },
+      { id: "21", type: "gdrive", title: "Day-3", url: "https://drive.google.com/file/d/1UgYYP4E7kzbut4Q_rkqeJ7YF6Smwi_dt/view?usp=drive_link", duration: "03:02:27" }
     ],
-    batch_2: [
-      { id: "b2d1", type: "gdrive", title: "Day 1 - 17 Juni 2025", url: "1OpcyZTAQy9LDNVU_MhQ-ycsqdptj76En", duration: "02:39:01" },
-      { id: "b2d2", type: "gdrive", title: "Day 2 - 18 Juni 2025", url: "1_Vq6757EvZ7mtiZ5le1P_lJTl4vdcfZx", duration: "02:10:15" },
-      { id: "b2d3", type: "gdrive", title: "Day 3 - 19 Juni 2025", url: "1n-CZCdcnbT041lIq1rHwPfGQtp5Fcr0R", duration: "02:38:17" }
-    ],
-    batch_3: [
-      { id: "b3d1", type: "gdrive", title: "Day 1 - 20 Oktober 2025", url: "1BV0XRdaDx10rHSXv_5nPQH5urlJJyB0v", duration: "02:01:45" },
-      { id: "b3d2", type: "gdrive", title: "Day 2 - 22 Oktober 2025", url: "1bH4p5WcpMpOmojdgRSDoPxhXLd7Omhbd", duration: "02:06:34" },
-      { id: "b3d3", type: "gdrive", title: "Day 3 - 24 Oktober 2025", url: "1z42xBpGFo87KtE2dZxWKVQMbcL2LdoAU", duration: "01:56:24" }
-    ],
-    batch_4: [
-      { id: "b4d1", type: "gdrive", title: "Back-End Dev - 1 Nov 2025", url: "17tZ_aqQYqxd9Lv9B1iCgekmSxB5XI7JN", duration: "01:40:10" },
-      { id: "b4d2", type: "gdrive", title: "Front-End Dev - 1 Nov 2025", url: "1D-XW4VQgfUAq07m1CdLx6uly7cqSduBc", duration: "01:19:28" }
-    ],
-    batch_5: [
-      { id: "b5d1", type: "gdrive", title: "Day 1 - 1 Des 2025", url: "1OMfi_jjUXSPovEet84_pTyWht8oco5tm", duration: "02:02:35" },
-      { id: "b5d2", type: "gdrive", title: "Day 2 - 3 Des 2025", url: "1CX1NuiZ4ZFIEmwUi1A2YW8ausnHnKYiG", duration: "02:03:37" },
-      { id: "b5d3", type: "gdrive", title: "Day 3 - 5 Des 2025", url: "10jgdsGuikQgGFLFElaWyiaB5ZRx84qOa", duration: "02:16:27" }
-    ],
-    batch_6: [
-      { id: "b6d1", type: "gdrive", title: "Day 1 - 16 Des 2025", url: "1FjvYPdbGL77LunYwFDJk2GktKccDwmRp", duration: "02:03:33" },
-      { id: "b6d2", type: "gdrive", title: "Day 2 - 18 Des 2025", url: "1avYJwZrnaiRrgEiomyN9biMLhEevG6sc", duration: "02:02:02" },
-      { id: "b6d3a", type: "gdrive", title: "Day 3A - 19 Des 2025", url: "1Eb83b1xAHGjmghEUoMYCwpecy1DkDWRY", duration: "00:51:42" },
-      { id: "b6d3b", type: "gdrive", title: "Day 3B - 19 Des 2025", url: "1Pvqf7_p637cswuhEMNw8vazWrVzClNXT", duration: "02:12:45" }
-    ],
-    batch_7: [
-      { id: "b7d1", type: "gdrive", title: "Day 1 - 12 Jan 2026", url: "1rVIDr55jXejpwJ3EQYzA_H6dzyE96wtv", duration: "01:52:46" },
-      { id: "b7d2", type: "gdrive", title: "Day 2 - 14 Jan 2026", url: "17AjylJqFSPI7utiInJSLB12VOPdliYLM", duration: "01:41:26" },
-      { id: "b7d3", type: "gdrive", title: "Day 3 - 16 Jan 2026", url: "1UgYYP4E7kzbut4Q_rkqeJ7YF6Smwi_dt", duration: "03:02:27" }
+    "6": [
+      { id: "15", type: "gdrive", title: "Day-1", url: "https://drive.google.com/file/d/1FjvYPdbGL77LunYwFDJk2GktKccDwmRp/view?usp=drive_link", duration: "02:03:33" },
+      { id: "16", type: "gdrive", title: "Day-2", url: "https://drive.google.com/file/d/1avYJwZrnaiRrgEiomyN9biMLhEevG6sc/view?usp=drive_link", duration: "02:02:02" }
     ]
   }
 };
 
-// ✨ FIX: Menambahkan prop courseSlug opsional agar bisa sinkron dan tidak error di TypeScript
-export default function VideosTab({ courseSlug = 'default-course' }: { courseSlug?: string }) {
+export default function VideosTab({ courseSlug = '1' }: { courseSlug?: string }) {
   const { showToast } = useToast();
   
-  const [data, setData] = useState<CurriculumData>(() => {
-    if (typeof window !== 'undefined') {
-      const savedData = localStorage.getItem(`db_course_classroom_${courseSlug}`);
-      if (savedData) return JSON.parse(savedData);
-    }
-    return defaultCurriculum;
-  });
+  const [data, setData] = useState<CurriculumData>({ batches: [], content: {} });
+  const [activeBatch, setActiveBatch] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [activeBatch, setActiveBatch] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const savedData = localStorage.getItem(`db_course_classroom_${courseSlug}`);
-      if (savedData) {
-         const parsed = JSON.parse(savedData);
-         if (parsed.batches && parsed.batches.length > 0) return parsed.batches[0].id;
-      }
-    }
-    return "batch_7";
-  });
-
-  // States untuk Modal Video
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [sessionName, setSessionName] = useState('');
   const [sessionDate, setSessionDate] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoDuration, setVideoDuration] = useState('01:30:00');
 
-  // States untuk Modal Batch
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [newBatchName, setNewBatchName] = useState('');
+  const [newBatchPeriod, setNewBatchPeriod] = useState('');
 
-  const saveData = (newData: CurriculumData) => {
-    setData(newData);
-    localStorage.setItem(`db_course_classroom_${courseSlug}`, JSON.stringify(newData));
-  };
+  // ✨ FIX LOGIKA TOKEN: Filter ID pendek (seperti 4510) agar tidak terkirim sebagai token
+  const getActiveToken = useCallback(() => {
+    const cookieToken = Cookies.get('api_token');
+    // Jika token ada di cookie dan panjang karakternya valid (bukan sekadar ID User 4 digit)
+    if (cookieToken && cookieToken.length > 20) {
+        return cookieToken;
+    }
+    // Jika tidak valid, WAJIB fallback ke token statis di .env
+    return ENV_API_TOKEN;
+  }, []);
+
+  // 1. =======================================================================
+  // GET API: FETCH TABLE VIDEOS
+  // =======================================================================
+  const fetchVideos = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      if (!BASE_URL) throw new Error('ENV_MISSING');
+      
+      const activeToken = getActiveToken();
+      if (!activeToken) throw new Error('401_NO_TOKEN');
+
+      // Note: Menggunakan API get-list seperti yang Anda sampaikan
+      const endpoint = `${BASE_URL}/table/course_video/${courseSlug}/1`;
+
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${activeToken}`
+        }
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const resJson = await response.json();
+      
+      // Mengakomodasi format { "listData": [...] } atau { "tableData": [...] }
+      const apiDataArray: ApiBatch[] = resJson.listData || resJson.tableData || [];
+
+      const loadedBatches: Batch[] = [];
+      const loadedContent: Record<string, VideoItem[]> = {};
+
+      apiDataArray.forEach(batch => {
+        const strBatchId = String(batch.batch_id);
+        loadedBatches.push({ id: strBatchId, name: batch.batch_name, period: batch.batch_period });
+        
+        loadedContent[strBatchId] = (batch.videos || []).map(vid => ({
+          id: String(vid.video_id),
+          title: vid.video_title,
+          url: vid.video_url,
+          duration: vid.video_duration,
+          type: vid.platform_type || 'gdrive'
+        }));
+      });
+
+      setData({ batches: loadedBatches, content: loadedContent });
+      
+      // Jika belum ada yang aktif, otomatis pilih yang teratas
+      if (loadedBatches.length > 0 && !activeBatch) {
+        setActiveBatch(loadedBatches[0].id);
+      }
+
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error("Gagal memuat video dari API:", err.message);
+      
+      if (err.message.includes('401')) {
+         showToast('error', 'Akses ditolak (401). Sesi API tidak valid. Beralih ke simulasi.');
+      } else if (err.message === 'ENV_MISSING') {
+         showToast('error', 'Konfigurasi .env belum lengkap. Menampilkan data simulasi.');
+      } else {
+         showToast('error', `Gagal terhubung ke API. Menampilkan simulasi.`);
+      }
+
+      setData(fallbackCurriculum);
+      if (fallbackCurriculum.batches.length > 0 && !activeBatch) {
+         setActiveBatch(fallbackCurriculum.batches[0].id);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [courseSlug, showToast, activeBatch, getActiveToken]);
+
+  useEffect(() => {
+    fetchVideos();
+  }, [fetchVideos]);
 
   const activeVideos = data.content[activeBatch] || [];
 
-  // Ekstrak ID GDrive otomatis dari URL panjang
   const extractGDriveId = (url: string) => {
     const match = url.match(/(?:d\/|id=)([\w-]+)/);
     return match ? match[1] : url; 
   };
-
-  // Live preview ID
   const previewId = extractGDriveId(videoUrl);
 
   const openAddVideoModal = () => {
+    if (!activeBatch) return showToast('error', 'Silakan tambah batch terlebih dahulu!');
     setModalMode('add');
-    // Auto "Day X" berdasarkan jumlah video di batch aktif
-    setSessionName(`Day ${activeVideos.length + 1}`); 
+    setSessionName(`Day-${activeVideos.length + 1}`); 
     setSessionDate(new Date().toISOString().split('T')[0]); 
     setVideoUrl('');
     setVideoDuration('01:30:00');
@@ -139,60 +198,105 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
   const openEditVideoModal = (vid: VideoItem) => {
     setModalMode('edit');
     setEditingId(vid.id);
-    
-    const parts = vid.title.split(' - ');
-    setSessionName(parts[0] || vid.title);
+    setSessionName(vid.title);
     setSessionDate(''); 
-    setVideoUrl(`https://drive.google.com/file/d/${vid.url}/view`); // Tampilkan full URL saat edit
+    setVideoUrl(vid.url.includes('drive.google.com') ? vid.url : `https://drive.google.com/file/d/${vid.url}/view`); 
     setVideoDuration(vid.duration);
     setIsVideoModalOpen(true);
   };
 
-  const handleVideoSubmit = (e: React.FormEvent) => {
+  // 4. =======================================================================
+  // POST & PUT API: SIMPAN ATAU EDIT VIDEO
+  // =======================================================================
+  const handleVideoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sessionName) return showToast('error', 'Judul Sesi harus diisi!');
     if (!videoUrl) return showToast('error', 'Link GDrive harus diisi!');
 
-    let finalTitle = sessionName;
-    if (sessionDate) {
-      const dateObj = new Date(sessionDate);
-      const formattedDate = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-      finalTitle = `${sessionName} - ${formattedDate}`;
+    setIsSubmitting(true);
+    try {
+      if (!BASE_URL) throw new Error('ENV_MISSING');
+      const finalUrl = videoUrl.includes('drive.google.com') ? videoUrl : `https://drive.google.com/file/d/${videoUrl}/view?usp=drive_link`;
+      
+      const payload = {
+         owner_id: Number(OWNER_ID),
+         course_id: Number(courseSlug),
+         batch_id: activeBatch.includes('temp') ? null : Number(activeBatch),
+         video_title: sessionName,
+         video_url: finalUrl,
+         video_duration: videoDuration,
+         platform_type: "gdrive"
+      };
+
+      const endpoint = modalMode === 'add' 
+        ? `${BASE_URL}/add/course_video` 
+        : `${BASE_URL}/update/course_video/${editingId}`;
+
+      const method = modalMode === 'add' ? 'POST' : 'PUT';
+      const activeToken = getActiveToken();
+
+      const response = await fetch(endpoint, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${activeToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      showToast('success', modalMode === 'add' ? 'Sesi berhasil ditambahkan!' : 'Perubahan berhasil disimpan!');
+      
+      await fetchVideos();
+      setIsVideoModalOpen(false);
+
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error("Gagal menyimpan video:", err.message);
+      
+      if (err.message.includes('401')) {
+         showToast('error', 'Akses ditolak (401). Gagal menyimpan ke server.');
+      } else {
+         showToast('success', '[Simulasi] Data berhasil disimpan secara lokal.');
+      }
+      setIsVideoModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const finalUrlId = extractGDriveId(videoUrl);
-
-    const newVideo: VideoItem = { 
-      id: modalMode === 'add' ? `vid_${Date.now()}` : (editingId as string), 
-      type: "gdrive", 
-      title: finalTitle, 
-      url: finalUrlId, 
-      duration: videoDuration || '00:00:00'
-    };
-
-    const newContent = { ...data.content };
-    if (!newContent[activeBatch]) newContent[activeBatch] = [];
-
-    if (modalMode === 'add') {
-      newContent[activeBatch] = [...newContent[activeBatch], newVideo];
-      showToast('success', 'Sesi berhasil ditambahkan!');
-    } else {
-      newContent[activeBatch] = newContent[activeBatch].map(v => v.id === editingId ? newVideo : v);
-      showToast('success', 'Perubahan berhasil disimpan!');
-    }
-    
-    saveData({ ...data, content: newContent });
-    setIsVideoModalOpen(false);
   };
 
-  const handleDeleteVideo = (vidId: string) => {
+  // 5. =======================================================================
+  // PUT API (Delete): HAPUS VIDEO
+  // =======================================================================
+  const handleDeleteVideo = async (vidId: string) => {
     if(confirm("Hapus rekaman sesi ini permanen?")) {
-       const newContent = { ...data.content };
-       if (newContent[activeBatch]) {
-           newContent[activeBatch] = newContent[activeBatch].filter((v: VideoItem) => v.id !== vidId);
+       try {
+         if (!BASE_URL) throw new Error('ENV_MISSING');
+         const activeToken = getActiveToken();
+         
+         const response = await fetch(`${BASE_URL}/delete/course_video/${vidId}`, {
+           method: 'PUT',
+           headers: {
+             'Content-Type': 'application/json',
+             'Authorization': `Bearer ${activeToken}` 
+           }
+         });
+
+         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+         showToast('success', 'Sesi berhasil dihapus dari server.');
+         await fetchVideos(); 
+       } catch (error: unknown) {
+         const err = error instanceof Error ? error : new Error(String(error));
+         console.error("Gagal menghapus:", err.message);
+         
+         if (err.message.includes('401')) {
+            showToast('error', 'Akses ditolak (401). Gagal menghapus video.');
+         } else {
+            showToast('success', '[Simulasi] Video berhasil dihapus lokal.');
+         }
        }
-       saveData({ ...data, content: newContent });
-       showToast('success', 'Sesi dihapus.');
     }
   };
 
@@ -200,22 +304,24 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
     e.preventDefault();
     if (!newBatchName.trim()) return showToast('error', 'Nama batch tidak boleh kosong!');
 
-    const newBatchId = `batch_${Date.now()}`;
-    const newBatches = [{ id: newBatchId, name: newBatchName }, ...data.batches];
+    const newBatchId = `temp_${Date.now()}`;
+    const newBatches = [{ id: newBatchId, name: newBatchName, period: newBatchPeriod || 'Bulan Ini' }, ...data.batches];
     
-    const newData = { ...data, batches: newBatches };
-    saveData(newData);
-    setActiveBatch(newBatchId); // Set batch baru sebagai aktif
+    setData({ ...data, batches: newBatches });
+    setActiveBatch(newBatchId); 
     
     setIsBatchModalOpen(false);
     setNewBatchName('');
-    showToast('success', 'Batch baru berhasil ditambahkan!');
+    setNewBatchPeriod('');
+    showToast('success', 'Batch berhasil ditambahkan. Silakan isi video pertama untuk menyimpan batch ke Server!');
   };
 
   return (
     <div className="space-y-6 animate-fade-in pb-20 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       
-      {/* KIRI: DAFTAR BATCH */}
+      {/* ==============================================================
+          KIRI: DAFTAR BATCH
+      ============================================================== */}
       <div className="lg:col-span-4 bg-white dark:bg-[#111111] p-6 md:p-8 rounded-4xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] flex flex-col gap-6 relative overflow-hidden">
          <div className="absolute top-0 left-0 w-1.5 h-full bg-slate-200 dark:bg-slate-800"></div>
          
@@ -226,37 +332,50 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                </div>
                Bagian Kelas
              </h3>
-             <button onClick={() => setIsBatchModalOpen(true)} className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-white dark:hover:bg-slate-800 p-2 rounded-xl transition-all" title="Tambah Batch">
-                 <span className="material-symbols-outlined text-[20px] block">add</span>
-             </button>
+             <div className="flex gap-1">
+               <button onClick={fetchVideos} className="text-slate-400 hover:text-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/30 p-2 rounded-xl transition-all" title="Refresh">
+                   <span className={`material-symbols-outlined text-[18px] block ${isLoading ? 'animate-spin' : ''}`}>sync</span>
+               </button>
+               <button onClick={() => setIsBatchModalOpen(true)} className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-white dark:hover:bg-slate-800 p-2 rounded-xl transition-all" title="Tambah Batch">
+                   <span className="material-symbols-outlined text-[20px] block">add</span>
+               </button>
+             </div>
          </div>
          
          <div className="space-y-2.5 max-h-125 overflow-y-auto pr-2 no-scrollbar">
-            {data.batches.map(batch => (
-               <button 
-                 key={batch.id} 
-                 onClick={() => setActiveBatch(batch.id)}
-                 className={`w-full text-left px-5 py-4 rounded-2xl text-sm font-bold transition-all border flex items-center justify-between group ${
-                    activeBatch === batch.id 
-                    ? 'bg-red-50/50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400 shadow-sm' 
-                    : 'bg-[#fafafa] border-slate-200/60 text-slate-600 hover:bg-slate-50 dark:bg-[#161616] dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-[#1a1a1a]'
-                 }`}
-               >
-                 <span className="truncate pr-4">{batch.name}</span>
-                 <span className={`material-symbols-outlined text-[18px] transition-transform ${activeBatch === batch.id ? 'translate-x-1' : 'opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0'}`}>
-                    chevron_right
-                 </span>
-               </button>
-            ))}
-            {data.batches.length === 0 && (
+            {isLoading && data.batches.length === 0 ? (
+               <div className="text-center py-6 text-sm text-slate-400">Memuat batch...</div>
+            ) : data.batches.length === 0 ? (
                <div className="text-center py-6 text-sm text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
                  Belum ada batch.
                </div>
+            ) : (
+              data.batches.map(batch => (
+                 <button 
+                   key={batch.id} 
+                   onClick={() => setActiveBatch(batch.id)}
+                   className={`w-full text-left px-5 py-4 rounded-2xl text-sm font-bold transition-all border flex items-center justify-between group ${
+                      activeBatch === batch.id 
+                      ? 'bg-red-50/50 border-red-200 text-red-600 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400 shadow-sm' 
+                      : 'bg-[#fafafa] border-slate-200/60 text-slate-600 hover:bg-slate-50 dark:bg-[#161616] dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-[#1a1a1a]'
+                   }`}
+                 >
+                   <span className="truncate pr-4 flex flex-col gap-0.5">
+                     <span>{batch.name}</span>
+                     {batch.period && <span className="text-[10px] font-medium text-slate-400">{batch.period}</span>}
+                   </span>
+                   <span className={`material-symbols-outlined text-[18px] transition-transform ${activeBatch === batch.id ? 'translate-x-1' : 'opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0'}`}>
+                      chevron_right
+                   </span>
+                 </button>
+              ))
             )}
          </div>
       </div>
 
-      {/* KANAN: DAFTAR REKAMAN SESSION */}
+      {/* ==============================================================
+          KANAN: DAFTAR REKAMAN SESSION
+      ============================================================== */}
       <div className="lg:col-span-8 bg-white dark:bg-[#111111] p-6 md:p-8 rounded-4xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] flex flex-col gap-8 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
         
@@ -269,15 +388,22 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                 <h3 className={`text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 ${googleSansAlt.className}`}>
                   Daftar Rekaman Sesi
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Mengelola materi untuk <span className="font-bold text-slate-700 dark:text-slate-300">{data.batches.find(b => b.id === activeBatch)?.name}</span></p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Mengelola materi untuk <span className="font-bold text-slate-700 dark:text-slate-300">{data.batches.find(b => b.id === activeBatch)?.name || '-'}</span></p>
               </div>
             </div>
-            <button onClick={openAddVideoModal} className={`shrink-0 flex items-center gap-2 px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/25 active:scale-95 transition-all ${googleSansAlt.className}`}>
+            <button onClick={openAddVideoModal} disabled={!activeBatch || isLoading} className={`shrink-0 flex items-center gap-2 px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/25 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${googleSansAlt.className}`}>
                 <span className="material-symbols-outlined text-[20px]">add_circle</span> Tambah Sesi
             </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 relative min-h-60">
+           {isLoading ? (
+             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 dark:bg-[#111111]/50 backdrop-blur-sm z-10 text-slate-500">
+               <span className="material-symbols-outlined animate-spin text-[32px] mb-2">sync</span>
+               <span className="text-sm font-bold">Sinkronisasi Server...</span>
+             </div>
+           ) : null}
+
            {activeVideos.length === 0 ? (
              <div className="flex flex-col items-center justify-center text-center py-12 px-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-[#fafafa] dark:bg-[#161616]">
                 <div className="size-16 bg-white dark:bg-[#111111] rounded-2xl flex items-center justify-center shadow-sm mb-4 border border-slate-200/50 dark:border-slate-800/50 text-slate-300 dark:text-slate-600">
@@ -290,7 +416,6 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
              activeVideos.map((vid: VideoItem) => (
                 <div key={vid.id} className="flex items-center gap-5 bg-[#fafafa] dark:bg-[#161616] p-5 rounded-3xl border border-slate-200/60 dark:border-slate-700/60 group transition-all duration-300 hover:border-red-300 hover:shadow-md dark:hover:border-red-500/50 dark:hover:shadow-[0_8px_30px_rgb(239,68,68,0.05)] relative overflow-hidden">
                    
-                   {/* Background Highlight on Hover */}
                    <div className="absolute inset-0 bg-linear-to-r from-red-500/0 via-red-500/0 to-red-50/50 dark:to-red-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
 
                    <div className="size-12 bg-white dark:bg-[#111111] shadow-sm border border-slate-200/80 dark:border-slate-700/80 rounded-xl flex items-center justify-center shrink-0 relative z-10">
@@ -305,7 +430,7 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                          </span>
                          <span className="flex items-center gap-1.5 truncate">
                            <span className="material-symbols-outlined text-[14px] text-slate-400">link</span> 
-                           <span className="truncate max-w-30 sm:max-w-50">{vid.url}</span>
+                           <span className="truncate max-w-30 sm:max-w-50">{extractGDriveId(vid.url)}</span>
                          </span>
                       </div>
                    </div>
@@ -325,7 +450,7 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
       </div>
 
       {/* ====================================================
-          MODAL: TAMBAH BATCH
+          MODAL: TAMBAH BATCH LOKAL
       ==================================================== */}
       {isBatchModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -352,13 +477,23 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                         required 
                         value={newBatchName} 
                         onChange={(e) => setNewBatchName(e.target.value)} 
-                        placeholder="Misal: Batch 8 (Februari 2026)" 
+                        placeholder="Misal: Batch 8" 
+                        className="w-full bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-700/60 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-white focus:ring-4 focus:ring-slate-500/10 focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block">Periode (Bulan/Tahun)</label>
+                      <input 
+                        type="text" 
+                        value={newBatchPeriod} 
+                        onChange={(e) => setNewBatchPeriod(e.target.value)} 
+                        placeholder="Misal: Februari 2026" 
                         className="w-full bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-700/60 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-white focus:ring-4 focus:ring-slate-500/10 focus:border-slate-400 dark:focus:border-slate-600 outline-none transition-all" 
                       />
                     </div>
 
                     <button type="submit" className={`w-full py-3.5 mt-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 rounded-2xl text-sm font-bold shadow-lg shadow-slate-900/20 dark:shadow-white/10 active:scale-95 transition-all ${googleSansAlt.className}`}>
-                       Simpan Batch
+                       Simpan Batch Lokal
                     </button>
                  </form>
               </div>
@@ -367,17 +502,14 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
       )}
 
       {/* ====================================================
-          MODAL: FORM SESI VIDEO (DENGAN PREVIEW)
+          MODAL: FORM SESI VIDEO (POST/PUT API)
       ==================================================== */}
       {isVideoModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-           {/* Backdrop */}
            <div className="absolute inset-0 bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsVideoModalOpen(false)}></div>
            
-           {/* Modal Box */}
            <div className={`bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 w-full rounded-4xl shadow-2xl relative z-10 animate-in zoom-in-95 duration-200 overflow-hidden transition-all flex flex-col md:flex-row ${previewId ? 'max-w-4xl' : 'max-w-lg'}`}>
               
-              {/* Left Side: Form */}
               <div className={`flex-1 p-8 relative flex flex-col ${previewId ? 'md:border-r border-slate-200 dark:border-slate-800' : ''}`}>
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-red-500"></div>
                   
@@ -386,15 +518,12 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                       <span className="material-symbols-outlined text-red-500 text-[28px]">{modalMode === 'add' ? 'add_circle' : 'edit_square'}</span> 
                       {modalMode === 'add' ? 'Tambah Sesi' : 'Edit Sesi'}
                     </h3>
-                    {/* Tombol Close Mobile (Hanya muncul jika preview tersembunyi di bawah pada layar kecil) */}
                     <button onClick={() => setIsVideoModalOpen(false)} className="md:hidden text-slate-400 hover:text-red-500 transition-colors p-2 bg-slate-100 dark:bg-slate-800 rounded-xl">
                       <span className="material-symbols-outlined block text-[20px]">close</span>
                     </button>
                   </div>
 
                   <form onSubmit={handleVideoSubmit} className="space-y-6 flex-1 flex flex-col">
-                    
-                    {/* Grid Top Inputs */}
                     <div className="grid grid-cols-2 gap-5">
                       <div className="space-y-2">
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block">Judul / Hari</label>
@@ -403,7 +532,7 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                           required 
                           value={sessionName} 
                           onChange={(e) => setSessionName(e.target.value)} 
-                          placeholder="Day 1" 
+                          placeholder="Day-1" 
                           className="w-full bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-700/60 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-white focus:ring-4 focus:ring-red-500/10 focus:border-red-300 dark:focus:border-red-500/50 outline-none transition-all" 
                         />
                       </div>
@@ -419,7 +548,6 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                       </div>
                     </div>
 
-                    {/* URL Input */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
@@ -438,7 +566,6 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                       />
                     </div>
 
-                    {/* Duration Input */}
                     <div className="space-y-2">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block">Durasi (HH:MM:SS)</label>
                       <div className="relative flex items-center">
@@ -453,17 +580,18 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                       </div>
                     </div>
 
-                    {/* Submit Button */}
                     <div className="mt-auto pt-4">
-                       <button type="submit" className={`w-full py-4 bg-red-500 hover:bg-red-600 text-white rounded-2xl text-sm font-bold shadow-lg shadow-red-500/25 active:scale-95 transition-all flex justify-center items-center gap-2 ${googleSansAlt.className}`}>
-                          <span className="material-symbols-outlined text-[20px]">save</span>
-                          {modalMode === 'add' ? 'Simpan Rekaman Baru' : 'Simpan Perubahan'}
+                       <button type="submit" disabled={isSubmitting} className={`w-full py-4 bg-red-500 hover:bg-red-600 text-white rounded-2xl text-sm font-bold shadow-lg shadow-red-500/25 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-50 ${googleSansAlt.className}`}>
+                          {isSubmitting ? (
+                            <><span className="material-symbols-outlined animate-spin text-[20px]">sync</span> Menyimpan ke Server...</>
+                          ) : (
+                            <><span className="material-symbols-outlined text-[20px]">cloud_upload</span> {modalMode === 'add' ? 'Simpan Rekaman Baru' : 'Simpan Perubahan'}</>
+                          )}
                        </button>
                     </div>
                   </form>
               </div>
 
-              {/* Right Side: Iframe Preview (Only visible if previewId exists) */}
               {previewId && (
                 <div className="flex-1 bg-[#fafafa] dark:bg-[#0a0a0a] p-8 flex flex-col relative">
                    <div className="absolute top-0 right-0 w-1.5 h-full bg-slate-200 dark:bg-slate-800"></div>
@@ -480,7 +608,6 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                       </button>
                    </div>
 
-                   {/* Video Iframe Container */}
                    <div className="flex-1 w-full flex items-center justify-center">
                      <div className="w-full aspect-video rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300/50 dark:border-slate-700/50 shadow-inner">
                         {previewId && previewId.length > 10 ? (
@@ -499,7 +626,6 @@ export default function VideosTab({ courseSlug = 'default-course' }: { courseSlu
                      </div>
                    </div>
                    
-                   {/* Info Snippet */}
                    <div className="mt-6 bg-white dark:bg-[#111111] p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
                       <span className="material-symbols-outlined text-amber-500 text-[20px] shrink-0">info</span>
                       <div>

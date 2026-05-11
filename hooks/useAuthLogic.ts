@@ -5,14 +5,12 @@ import Cookies from 'js-cookie';
 export const useAuthLogic = () => {
   const router = useRouter();
 
-  // --- STATE ---
   const [loginState, setLoginState] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpValues, setOtpValues] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // --- HELPER: FORMAT NOMOR HP ---
   const formatPhoneNumber = (raw: string) => {
     let clean = raw.replace(/\D/g, ''); 
     if (clean.startsWith('62')) {
@@ -23,7 +21,6 @@ export const useAuthLogic = () => {
     return clean;
   };
 
-  // --- 1. API: REQUEST OTP ---
   const handleCheckPhone = async () => {
     setErrorMessage('');
     
@@ -35,15 +32,12 @@ export const useAuthLogic = () => {
     setIsLoading(true);
 
     try {
-      // Menggunakan Base URL spesifik untuk Auth
       const authBaseUrl = process.env.NEXT_PUBLIC_AUTH_BASE_URL || 'https://auth.katib.cloud';
-      const appId = process.env.NEXT_PUBLIC_APP_ID || '20'; // Sesuai dengan spesifikasi /login/20/...
+      const appId = process.env.NEXT_PUBLIC_APP_ID || '20';
       
       const cleanPhone = formatPhoneNumber(phoneNumber);
       const endpoint = `${authBaseUrl}/login/${appId}/${cleanPhone}`;
       
-      console.log("Menembak API ke:", endpoint);
-
       const response = await fetch(endpoint, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -51,17 +45,16 @@ export const useAuthLogic = () => {
 
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Server Error: Endpoint tidak valid atau tidak ditemukan (404/500)");
+        throw new Error(`Server Error (${response.status}): Endpoint tidak valid.`);
       }
 
       const responseJson = await response.json();
 
       if (!response.ok) {
-        throw new Error(responseJson.message || 'Gagal mengirim OTP');
+        throw new Error(responseJson.message || `Gagal mengirim OTP (Error ${response.status})`);
       }
 
       if (responseJson.data?.status === 'success' || response.status === 201) {
-        console.log('OTP Sent:', responseJson);
         setLoginState('otp');
       } else {
         throw new Error('Gagal mengirim OTP. Pastikan nomor terdaftar.');
@@ -76,7 +69,6 @@ export const useAuthLogic = () => {
     }
   };
 
-  // --- 2. API: VERIFY OTP ---
   const handleVerifyLogin = async () => {
     const otpCode = otpValues.join('');
     
@@ -109,36 +101,33 @@ export const useAuthLogic = () => {
         throw new Error(data.message || 'Kode OTP salah atau kedaluwarsa.');
       }
 
-      console.log('Login Success:', data);
-
       if (typeof window !== 'undefined') {
-        // Simpan Profil
         localStorage.setItem('user_profile', JSON.stringify(data));
-        
-        // ✨ Menyimpan OWNER_ID ke localStorage untuk digunakan oleh API Assignment
         if (data.owner_id) {
            localStorage.setItem('instructor_owner_id', String(data.owner_id));
         }
       }
 
       const activeUserId = data?.customer_id || data?.user_id || data?.owner_id || 'session_active';
+      const actualToken = data?.token || data?.data?.token || data?.access_token || '';
 
-      // Konfigurasi Cookie Standar Enterprise
       Cookies.set('auth_session', activeUserId.toString(), { 
-          expires: 7,          // Usia mutlak: 7 hari
-          path: '/',           // Valid untuk semua halaman
-          secure: process.env.NODE_ENV === 'production', // Wajib true jika di production
-          sameSite: 'lax'      // Keamanan standar browser modern
-      });
-      
-      Cookies.set('token', activeUserId.toString(), { 
-          expires: 7, 
-          path: '/',
+          expires: 7,          
+          path: '/',           
           secure: process.env.NODE_ENV === 'production', 
-          sameSite: 'lax'
+          sameSite: 'lax'      
       });
       
-      // ✨ Mengarahkan langsung ke Dashboard Utama (Root)
+      if (actualToken) {
+          Cookies.set('api_token', actualToken, { 
+              expires: 7, 
+              path: '/',
+              secure: process.env.NODE_ENV === 'production', 
+              sameSite: 'lax'
+          });
+      }
+      
+      Cookies.remove('token'); 
       router.push('/');
 
     } catch (error: unknown) {
@@ -151,7 +140,6 @@ export const useAuthLogic = () => {
     }
   };
 
-  // --- HELPER UI ---
   const handleOtpChange = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
     const newOtp = [...otpValues];

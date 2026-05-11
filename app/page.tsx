@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { DM_Sans, Inter } from 'next/font/google';
 import Cookies from 'js-cookie';
-
-// 1. TAMBAHKAN IMPORT INI DI BAGIAN ATAS
 import SessionGuard from '@/components/SessionGuard';
+import { useToast } from '@/components/ui/ToastProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
@@ -27,9 +27,26 @@ interface CourseItem {
   students: number;
   lastUpdated: string;
   progress: number;
+  batch?: string; 
+  thumbnail?: string;
 }
 
-// ✨ FIX: Menambahkan interface untuk tipe User Profile agar tidak menggunakan 'any'
+interface ApiCourseItem {
+  course_id: number;
+  owner_id?: number;
+  category_id?: number;
+  category_name?: string;
+  title: string;
+  level?: string;
+  price?: number;
+  thumbnail?: string;
+  author?: string;
+  rating?: string;
+  students?: number;
+  updated_at?: string;
+  progress?: number;
+}
+
 interface UserProfile {
   email?: string;
   role?: string;
@@ -39,152 +56,189 @@ interface UserProfile {
 
 export default function InstructorDashboard() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [activeMenu, setActiveMenu] = useState('dashboard');
   
   const [courses, setCourses] = useState<CourseItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // States Pagination & Search
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   
   // STATE MODAL & USER PROFILE
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCourseTitle, setNewCourseTitle] = useState('');
-  
-  // ✨ FIX: Menggunakan interface UserProfile alih-alih any
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
-  // ✨ FIX: PROTEKSI HALAMAN LOKAL & AMBIL DATA PROFIL
+  // BASE URL DARI ENV
+  const RAW_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  const BASE_URL = RAW_BASE_URL.endsWith('/') ? RAW_BASE_URL.slice(0, -1) : RAW_BASE_URL;
+  const OWNER_ID = process.env.NEXT_PUBLIC_OWNER_ID || ''; 
+  const ENV_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN || '';
+
+  // ✨ FUNGSI LOGOUT TERPUSAT
+  const performLogout = useCallback(() => {
+    Cookies.remove('auth_session');
+    Cookies.remove('api_token');
+    Cookies.remove('token'); // Bersihkan cookie usang jika ada
+    localStorage.removeItem('user_profile');
+    localStorage.removeItem('instructor_owner_id');
+    router.replace('/login');
+  }, [router]);
+
+  // 1. PROTEKSI HALAMAN LOKAL & AMBIL DATA PROFIL
   useEffect(() => {
-    const sessionToken = Cookies.get('auth_session') || Cookies.get('token');
+    const sessionToken = Cookies.get('auth_session');
     
-    // Jika tidak ada token login, paksa pindah ke halaman login
     if (!sessionToken) {
-      router.replace('/login');
+      performLogout();
       return;
     }
 
-    // Jika ada token, ambil profil dari localStorage
     const savedProfile = localStorage.getItem('user_profile');
     if (savedProfile) {
-      // ✨ FIX ESLINT: Menggunakan setTimeout untuk mendefer setState
       const timer = setTimeout(() => {
         setUserProfile(JSON.parse(savedProfile));
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [router]);
+  }, [performLogout]);
 
-  // FUNGSI SINKRONISASI LOCALSTORAGE UNTUK KELAS
-  useEffect(() => {
-    const loadCoursesFromStorage = () => {
-      try {
-        const allKeys = Object.keys(localStorage);
-        const courseKeys = allKeys.filter(key => key.startsWith('db_course_basic_'));
-        
-        let loadedCourses: CourseItem[] = [];
+  // ✨ KUNCI: AMBIL TOKEN YANG BENAR
+  const getActiveToken = useCallback(() => {
+    return Cookies.get('api_token') || ENV_API_TOKEN;
+  }, [ENV_API_TOKEN]);
 
-        if (courseKeys.length > 0) {
-          loadedCourses = courseKeys.map((key) => {
-             const data = JSON.parse(localStorage.getItem(key) || '{}');
-             const slug = key.replace('db_course_basic_', '');
-             
-             let progress = 45; // Default progress
-             const curriculumStr = localStorage.getItem(`db_course_classroom_${slug}`);
-             if (curriculumStr && curriculumStr !== '[]') {
-                progress = 100; // Mock: Jika ada data kelas, progress naik
-             }
+  // 2. FUNGSI FETCH COURSES DARI API (GET TABLE)
+  const fetchCourses = useCallback(async (page: number, search: string = '') => {
+    setIsLoading(true);
+    try {
+      if (!BASE_URL || !OWNER_ID) throw new Error("ENV_MISSING");
 
-             return {
-                id: slug,
-                slug: slug,
-                title: data.title || 'Untitled Course',
-                status: data.isPublished ? 'Published' : 'Draft',
-                students: Math.floor(Math.random() * 500), 
-                lastUpdated: 'Baru saja diperbarui',
-                progress: progress,
-             };
-          });
-        } else {
-           loadedCourses = [
-              {
-                 id: 1,
-                 slug: 'ngodingai',
-                 title: 'NgodingAI: Master GenAI & LLMs',
-                 status: 'Published',
-                 students: 842,
-                 lastUpdated: '2 jam yang lalu',
-                 progress: 100,
-              }
-           ];
-        }
+      const endpoint = search 
+        ? `${BASE_URL}/table/courses/${OWNER_ID}/${page}?search=${encodeURIComponent(search)}`
+        : `${BASE_URL}/table/course/${OWNER_ID}/${page}`;
 
-        setCourses(loadedCourses);
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Gagal memuat data kelas:", error);
-        setIsLoading(false);
+      const activeToken = getActiveToken();
+      const headers: HeadersInit = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      };
+      
+      if (activeToken) headers['Authorization'] = `Bearer ${activeToken}`;
+
+      const response = await fetch(endpoint, { method: 'GET', headers });
+
+      // AUTO-LOGOUT JIKA API MENOLAK
+      if (response.status === 401 || response.status === 403) {
+        showToast('error', 'Sesi login Anda telah berakhir. Silakan masuk kembali.');
+        performLogout();
+        return;
       }
-    };
 
-    // ✨ FIX ESLINT: Mendefer eksekusi awal agar tidak terjadi sync state update
-    const initTimer = setTimeout(() => {
-      loadCoursesFromStorage();
-    }, 0);
+      if (!response.ok) throw new Error(`API_ERROR: HTTP ${response.status}`);
+      
+      const data = await response.json();
+      
+      const formattedData: CourseItem[] = data.tableData?.map((item: ApiCourseItem) => ({
+        id: item.course_id,
+        slug: String(item.course_id), 
+        title: item.title,
+        status: 'Published', 
+        students: item.students || 0,
+        lastUpdated: 'Baru saja', 
+        progress: 100, 
+        batch: item.category_name || 'Umum', 
+        thumbnail: item.thumbnail
+      })) || [];
 
-    window.addEventListener('storage', loadCoursesFromStorage);
-    
-    return () => {
-      clearTimeout(initTimer);
-      window.removeEventListener('storage', loadCoursesFromStorage);
-    };
-  }, []);
+      setCourses(formattedData);
+      setTotalPages(data.totalPages || 1);
+      setCurrentPage(data.currentPage || 1);
+
+    } catch (error) {
+      console.error("Gagal memuat data kelas dari API:", error);
+      setCourses([{
+         id: 1, slug: '1', title: '[Simulasi] UI/UX Design Masterclass', 
+         status: 'Draft', students: 0, lastUpdated: 'Baru saja', progress: 0, batch: 'Design'
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [BASE_URL, OWNER_ID, performLogout, showToast, getActiveToken]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => fetchCourses(1, searchQuery), 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery, fetchCourses]);
   
-  const generateSlug = (title: string) => {
-    return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-  };
-
-  const handleCreateCourse = (e: React.FormEvent) => {
+  // 3. FUNGSI TAMBAH KELAS BARU KE API (POST)
+  const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCourseTitle.trim()) return;
+    setIsSubmitting(true);
     
-    const slug = generateSlug(newCourseTitle);
-    
-    const newCourseData = {
-       title: newCourseTitle,
-       slug: slug,
-       thumbnail: "https://images.unsplash.com/photo-1677442136019-21780ecad995?q=80&w=1000&auto=format&fit=crop",
-       level: "Pemula",
-       price: "0",
-       discount: "0",
-       isPublished: false
-    };
-    
-    localStorage.setItem(`db_course_basic_${slug}`, JSON.stringify(newCourseData));
+    try {
+      if (!BASE_URL || !OWNER_ID) throw new Error("ENV_MISSING");
 
-    setIsAddModalOpen(false);
-    setNewCourseTitle('');
-    
-    router.push(`/course-editor?course=${slug}`);
+      const endpoint = `${BASE_URL}/add/course`;
+      const activeToken = getActiveToken();
+      
+      const headers: HeadersInit = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      };
+      
+      if (activeToken) headers['Authorization'] = `Bearer ${activeToken}`;
+
+      const payload = {
+         owner_id: Number(OWNER_ID),
+         category_id: 1, 
+         title: newCourseTitle,
+         level: "Beginner",
+         price: 0,
+         thumbnail: "",
+         author: getDisplayName()
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        showToast('error', 'Sesi login Anda telah berakhir. Silakan masuk kembali.');
+        performLogout();
+        return;
+      }
+
+      if (!response.ok) throw new Error("Gagal membuat kelas");
+      const result = await response.json();
+
+      setIsAddModalOpen(false);
+      setNewCourseTitle('');
+      showToast('success', 'Kelas berhasil dibuat!');
+      
+      const newCourseId = result.data?.course_id || result.data?.id || result.insertId || '1';
+      router.push(`/course-editor?course=${newCourseId}`);
+
+    } catch (error) {
+      console.error("Error create course:", error);
+      showToast('error', 'Gagal menyambung ke server untuk membuat kelas.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // ✨ FIX: FUNGSI LOGOUT
   const handleLogout = (e: React.MouseEvent) => {
     e.preventDefault();
-    // Hapus semua jejak otentikasi
-    Cookies.remove('auth_session');
-    Cookies.remove('token');
-    localStorage.removeItem('user_profile');
-    localStorage.removeItem('instructor_owner_id');
-    
-    // Arahkan ke halaman login
-    router.replace('/login');
+    performLogout();
   };
 
-  const filteredCourses = courses.filter(course => 
-    course.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    course.slug.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Mengambil nama depan dari email/username (misal: fayyadh@... -> Fayyadh)
   const getDisplayName = () => {
     if (!userProfile) return 'Instruktur';
     const emailName = userProfile.email ? userProfile.email.split('@')[0] : 'User';
@@ -193,18 +247,14 @@ export default function InstructorDashboard() {
 
   return (
     <div className={`flex min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] ${inter.className}`}>
-      
-      {/* 2. PANGGIL KOMPONEN SESSION GUARD DI SINI (Tepat di bawah pembuka div utama) */}
       <SessionGuard />
       
-      {/* =========================================
-          SIDEBAR NAVIGATION
-      ========================================= */}
+      {/* SIDEBAR NAVIGATION */}
       <aside className="w-64 bg-white dark:bg-[#111111] border-r border-slate-200 dark:border-slate-800 flex-col hidden lg:flex sticky top-0 h-screen shadow-sm">
         <div className="h-20 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2">
-            <div className="size-8 bg-slate-900 dark:bg-white rounded-lg flex items-center justify-center shadow-md">
-              <span className="material-symbols-outlined text-white dark:text-slate-900 text-[18px]">school</span>
+            <div className="size-8 bg-[#00BCD4] rounded-lg flex items-center justify-center shadow-md">
+              <span className="material-symbols-outlined text-white text-[18px]">school</span>
             </div>
             <span className={`text-lg font-extrabold text-slate-900 dark:text-white tracking-tight ${googleSansAlt.className}`}>
               Instructor<span className="text-[#00BCD4]">Hub</span>
@@ -242,9 +292,7 @@ export default function InstructorDashboard() {
         </div>
       </aside>
 
-      {/* =========================================
-          MAIN CONTENT AREA
-      ========================================= */}
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col relative min-w-0">
         <header className="h-20 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 md:px-10 sticky top-0 z-30">
           <h1 className={`text-xl font-bold text-slate-900 dark:text-white ${googleSansAlt.className}`}>
@@ -259,7 +307,6 @@ export default function InstructorDashboard() {
             <div className="h-8 w-px bg-slate-200 dark:bg-slate-800"></div>
             <div className="flex items-center gap-3 cursor-pointer">
               <div className="text-right hidden sm:block">
-                {/* ✨ FIX: Menampilkan nama dan role dinamis dari API Login */}
                 <p className={`text-sm font-bold text-slate-900 dark:text-white leading-tight ${googleSansAlt.className}`}>
                   {getDisplayName()}
                 </p>
@@ -307,7 +354,7 @@ export default function InstructorDashboard() {
             ))}
           </div>
 
-          {/* KELOLA KELAS */}
+          {/* KELOLA KELAS (Dari API) */}
           <div className="flex flex-col gap-6 mt-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 gap-4">
                <h2 className={`text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 ${googleSansAlt.className}`}>
@@ -321,7 +368,7 @@ export default function InstructorDashboard() {
                        type="text" 
                        value={searchQuery}
                        onChange={(e) => setSearchQuery(e.target.value)}
-                       placeholder="Cari kelas..." 
+                       placeholder="Cari nama kelas..." 
                        className="bg-transparent border-none focus:ring-0 text-sm w-full sm:w-48 ml-2 outline-none dark:text-white" 
                      />
                   </div>
@@ -331,77 +378,98 @@ export default function InstructorDashboard() {
             {isLoading ? (
                <div className="col-span-full py-16 text-center">
                  <div className="size-10 border-4 border-slate-200 border-t-[#00BCD4] rounded-full animate-spin mx-auto mb-4"></div>
-                 <p className="text-slate-500 font-medium animate-pulse">Memuat data kelas...</p>
+                 <p className="text-slate-500 font-medium animate-pulse">Menghubungkan ke database server...</p>
                </div>
             ) : (
-               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                 {filteredCourses.length === 0 ? (
-                    <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
-                       <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">search_off</span>
-                       <p className="text-slate-500 font-medium">Tidak ada kelas yang sesuai dengan pencarian Anda.</p>
-                    </div>
-                 ) : (
-                   filteredCourses.map((course) => (
-                     <div key={course.id} className="bg-white dark:bg-[#111111] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-xl hover:border-cyan-200 dark:hover:border-slate-700 transition-all duration-300 group flex flex-col">
-                       
-                       <div className="h-32 bg-slate-100 dark:bg-slate-900 relative border-b border-slate-200 dark:border-slate-800 overflow-hidden">
-                         <div className="absolute inset-0 bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 opacity-50 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"></div>
-                         <div className="absolute top-4 left-4 z-10">
-                            <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-md flex items-center gap-1.5 ${
-                              course.status === 'Published' 
-                              ? 'bg-emerald-50/90 text-emerald-600 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50' 
-                              : 'bg-amber-50/90 text-amber-600 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/50'
-                            }`}>
-                               <span className={`size-1.5 rounded-full ${course.status === 'Published' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
-                               {course.status}
-                            </span>
-                         </div>
-                       </div>
-
-                       <div className="p-6 flex flex-col flex-1">
-                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">ID: {course.slug}</p>
-                         <h3 className={`text-lg font-bold text-slate-900 dark:text-white leading-snug mb-4 group-hover:text-[#00BCD4] transition-colors line-clamp-2 ${googleSansAlt.className}`}>
-                           {course.title}
-                         </h3>
+               <>
+                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                   {courses.length === 0 ? (
+                      <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+                         <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">search_off</span>
+                         <p className="text-slate-500 font-medium">Tidak ada kelas yang ditemukan di database.</p>
+                      </div>
+                   ) : (
+                     courses.map((course) => (
+                       <div key={course.id} className="bg-white dark:bg-[#111111] rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-xl hover:border-cyan-200 dark:hover:border-slate-700 transition-all duration-300 group flex flex-col">
                          
-                         <div className="mt-auto space-y-4">
-                           <div className="flex items-center justify-between text-sm">
-                              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
-                                <span className="material-symbols-outlined text-[18px]">group</span> {course.students} Siswa
-                              </div>
-                              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
-                                <span className="material-symbols-outlined text-[16px]">update</span> {course.lastUpdated}
-                              </div>
+                         <div className="h-32 bg-slate-100 dark:bg-slate-900 relative border-b border-slate-200 dark:border-slate-800 overflow-hidden">
+                           {course.thumbnail && course.thumbnail.startsWith('http') ? (
+                              <Image src={course.thumbnail} alt={course.title} fill unoptimized className="object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
+                           ) : (
+                              <div className={`absolute inset-0 opacity-50 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500 ${course.thumbnail || 'bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900'}`}></div>
+                           )}
+                           
+                           <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-md flex items-center gap-1.5 ${
+                                course.status === 'Published' 
+                                ? 'bg-emerald-50/90 text-emerald-600 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50' 
+                                : 'bg-amber-50/90 text-amber-600 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/50'
+                              }`}>
+                                 <span className={`size-1.5 rounded-full ${course.status === 'Published' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
+                                 {course.status}
+                              </span>
+                              {course.batch && (
+                                <span className="bg-slate-900/80 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg w-max backdrop-blur-md">
+                                  {course.batch}
+                                </span>
+                              )}
                            </div>
+                         </div>
 
-                           <div className="space-y-1.5">
-                              <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                <span>Kelengkapan Kurikulum</span>
-                                <span>{course.progress}%</span>
-                              </div>
-                              <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                                <div className={`h-full rounded-full transition-all ${course.progress === 100 ? 'bg-emerald-500' : 'bg-[#00BCD4]'}`} style={{ width: `${course.progress}%` }}></div>
-                              </div>
-                           </div>
+                         <div className="p-6 flex flex-col flex-1">
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">ID: {course.id}</p>
+                           <h3 className={`text-lg font-bold text-slate-900 dark:text-white leading-snug mb-4 group-hover:text-[#00BCD4] transition-colors line-clamp-2 ${googleSansAlt.className}`}>
+                             {course.title}
+                           </h3>
+                           
+                           <div className="mt-auto space-y-4">
+                             <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
+                                  <span className="material-symbols-outlined text-[18px]">group</span> {course.students} Siswa
+                                </div>
+                                <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
+                                  <span className="material-symbols-outlined text-[16px]">update</span> {course.lastUpdated}
+                                </div>
+                             </div>
 
-                           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-                              <Link href={`/course-editor?course=${course.slug}`} className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}>
-                                <span className="material-symbols-outlined text-[18px]">edit_square</span> Edit Kelas
-                              </Link>
+                             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                                <Link href={`/course-editor?course=${course.id}`} className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}>
+                                  <span className="material-symbols-outlined text-[18px]">edit_square</span> Edit Kelas
+                                </Link>
+                             </div>
                            </div>
                          </div>
                        </div>
-                     </div>
-                   ))
+                     ))
+                   )}
+                 </div>
+
+                 {totalPages > 1 && (
+                    <div className="mt-8 flex items-center justify-center gap-3">
+                      <button 
+                        disabled={currentPage === 1}
+                        onClick={() => fetchCourses(currentPage - 1, searchQuery)}
+                        className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span className="material-symbols-outlined text-sm block">chevron_left</span>
+                      </button>
+                      <span className="text-sm font-bold text-slate-600 dark:text-slate-400 px-4">
+                        Hal {currentPage} dari {totalPages}
+                      </span>
+                      <button 
+                        disabled={currentPage === totalPages}
+                        onClick={() => fetchCourses(currentPage + 1, searchQuery)}
+                        className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span className="material-symbols-outlined text-sm block">chevron_right</span>
+                      </button>
+                    </div>
                  )}
-               </div>
+               </>
             )}
           </div>
         </main>
 
-        {/* =========================================
-            MODAL BUAT KELAS BARU
-        ========================================= */}
         {isAddModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={() => setIsAddModalOpen(false)}></div>
@@ -420,27 +488,28 @@ export default function InstructorDashboard() {
 
                    <form onSubmit={handleCreateCourse} className="space-y-5">
                       <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Nama Kelas Utama</label>
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Nama / Topik Kelas</label>
                         <input 
                           type="text" 
                           required autoFocus
                           value={newCourseTitle} 
                           onChange={(e) => setNewCourseTitle(e.target.value)} 
-                          placeholder="Misal: Mahir Next.js dalam 30 Hari" 
+                          placeholder="Misal: Front End Stack Masterclass" 
                           className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3.5 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-[#00BCD4]/50 outline-none transition-all" 
                         />
-                        <p className="text-[10px] text-slate-400 mt-2">Sistem akan otomatis membuatkan Class ID berdasarkan nama ini.</p>
+                        <p className="text-[10px] text-slate-400 mt-2">Data ini akan dikirimkan ke database melalui API.</p>
                       </div>
-                      
-                      {newCourseTitle && (
-                        <div className="bg-cyan-50 dark:bg-cyan-900/10 p-3 rounded-xl border border-cyan-100 dark:border-cyan-900/30">
-                          <p className="text-[10px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-1">Class ID (Slug) Otomatis:</p>
-                          <p className="text-sm font-mono text-slate-600 dark:text-slate-300 truncate">{generateSlug(newCourseTitle)}</p>
-                        </div>
-                      )}
 
-                      <button type="submit" className={`w-full py-3.5 mt-2 bg-[#00BCD4] hover:bg-cyan-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex justify-center items-center gap-2 ${googleSansAlt.className}`}>
-                         Lanjutkan ke Editor <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                      <button 
+                        type="submit" 
+                        disabled={isSubmitting}
+                        className={`w-full py-3.5 mt-2 bg-[#00BCD4] hover:bg-cyan-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${googleSansAlt.className}`}
+                      >
+                         {isSubmitting ? (
+                           <><span className="material-symbols-outlined animate-spin text-[18px]">sync</span> Memproses...</>
+                         ) : (
+                           <>Lanjutkan <span className="material-symbols-outlined text-[18px]">arrow_forward</span></>
+                         )}
                       </button>
                    </form>
                 </div>
