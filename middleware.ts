@@ -1,26 +1,51 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+const AUTH_COOKIE_NAME = 'auth_session';
+
+const protectedRoutes = [
+  '/',
+  '/course-editor',
+];
+
+const authRoutes = [
+  '/login',
+];
+
+function isProtectedPath(pathname: string) {
+  return protectedRoutes.some((route) => {
+    if (route === '/') return pathname === '/';
+    return pathname === route || pathname.startsWith(`${route}/`);
+  });
+}
+
+function isAuthPath(pathname: string) {
+  return authRoutes.includes(pathname);
+}
+
 export function middleware(request: NextRequest) {
-  // Ambil token dari cookies browser
-  const sessionToken = request.cookies.get('auth_session')?.value || request.cookies.get('token')?.value;
+  const { pathname, search } = request.nextUrl;
 
-  // Tentukan path mana saja yang membutuhkan perlindungan (hanya user login yang bisa akses)
-  const isProtectedRoute = request.nextUrl.pathname === '/' || request.nextUrl.pathname.startsWith('/course-editor');
+  const sessionToken = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
-  // Jika mencoba akses halaman terproteksi TANPA token, alihkan ke /login
-  if (isProtectedRoute && !sessionToken) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  const protectedPath = isProtectedPath(pathname);
+  const authPath = isAuthPath(pathname);
+
+  if (protectedPath && !sessionToken) {
+    const loginUrl = new URL('/login', request.url);
+
+    const callbackUrl = `${pathname}${search}`;
+    loginUrl.searchParams.set('callbackUrl', callbackUrl);
+
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Jika mencoba buka /login TAPI SUDAH punya token, alihkan ke Dashboard (/)
-  if (request.nextUrl.pathname === '/login' && sessionToken) {
+  if (authPath && sessionToken) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
   return NextResponse.next();
 }
 
-// Konfigurasi ini memastikan middleware hanya berjalan di rute-rute penting, mengabaikan file statis seperti CSS/Gambar
 export const config = {
   matcher: [
     '/',
