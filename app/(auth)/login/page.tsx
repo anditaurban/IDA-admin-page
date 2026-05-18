@@ -107,7 +107,7 @@ export default function LoginPage() {
 
                   <input
                     className="w-full bg-transparent border-none text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-0 text-sm sm:text-base font-bold p-0 outline-none"
-                    placeholder="Contoh: 0812... / +628..."
+                    placeholder="0812... / +628..."
                     value={phoneNumber}
                     onChange={(e) => {
                       const val = e.target.value;

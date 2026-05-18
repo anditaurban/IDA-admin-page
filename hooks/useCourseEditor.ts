@@ -1,0 +1,510 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Cookies from 'js-cookie';
+import {
+  BASE_URL,
+  buildJsonHeaders,
+  readApiResponse,
+} from '@/utils/api';
+import {
+  calculateTotalPrice,
+  DiscountMode,
+  normalizeNumberString,
+} from '@/utils/coursePricing';
+import type { CourseCategory } from '@/hooks/useCourseCategories';
+
+type ToastType = 'success' | 'error' | 'info' | 'loading';
+type ToastFn = (type: ToastType, message: string) => void;
+type ApiRecord = Record<string, unknown>;
+
+type ThumbnailUpdateResponse = {
+  message?: string;
+  thumbnail?: string;
+  url?: string;
+  file_url?: string;
+  data?: {
+    thumbnail?: string;
+    url?: string;
+    file_url?: string;
+    message?: string;
+  };
+};
+
+export interface BasicCourseData {
+  course_id?: number;
+  author_name?: string;
+  title: string;
+  thumbnail: string;
+  level: string;
+  price: string;
+  discount: string;
+  discount_nominal?: string;
+  discount_percent?: string;
+  total_price?: string;
+  isPublished?: boolean;
+  category_id?: number;
+  category_name?: string;
+  author?: string;
+  rating?: string;
+  students?: number;
+  deskripsi?: string;
+  tech_stack?: string[];
+  target_audience?: string[];
+}
+
+export const defaultBasicData: BasicCourseData = {
+  course_id: undefined,
+  title: '',
+  thumbnail: '',
+  level: 'Beginner',
+  price: '',
+  discount: '',
+  discount_nominal: '',
+  discount_percent: '',
+  total_price: '0',
+  isPublished: false,
+  category_id: 1,
+  category_name: 'Umum',
+  author: 'Instruktur',
+  rating: '0.0',
+  students: 0,
+  deskripsi: '',
+  tech_stack: [],
+  target_audience: [],
+};
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    const cleanValue = value.trim();
+    if (!cleanValue) return [];
+
+    try {
+      const parsed: unknown = JSON.parse(cleanValue);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item).trim()).filter(Boolean);
+      }
+    } catch {
+      // fallback comma-separated string
+    }
+
+    return cleanValue
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function extractCoursePayload(resJson: unknown, courseSlug: string): ApiRecord | null {
+  if (!resJson || typeof resJson !== 'object') return null;
+
+  const data = resJson as ApiRecord;
+  const tableData = data.tableData;
+  const detail = data.detail;
+  const responseData = data.data;
+
+  if (Array.isArray(tableData)) {
+    const matched = tableData.find((course) => {
+      if (!course || typeof course !== 'object') return false;
+      return String((course as ApiRecord).course_id) === String(courseSlug);
+    });
+
+    const fallback = tableData[0];
+
+    if (matched && typeof matched === 'object') return matched as ApiRecord;
+    if (fallback && typeof fallback === 'object') return fallback as ApiRecord;
+
+    return null;
+  }
+
+  if (Array.isArray(detail)) {
+    const firstDetail = detail[0];
+    return firstDetail && typeof firstDetail === 'object' ? (firstDetail as ApiRecord) : null;
+  }
+
+  if (detail && typeof detail === 'object') return detail as ApiRecord;
+
+  if (Array.isArray(responseData)) {
+    const firstData = responseData[0];
+    return firstData && typeof firstData === 'object' ? (firstData as ApiRecord) : null;
+  }
+
+  if (responseData && typeof responseData === 'object') return responseData as ApiRecord;
+
+  if (Array.isArray(resJson)) {
+    const firstItem = resJson[0];
+    return firstItem && typeof firstItem === 'object' ? (firstItem as ApiRecord) : null;
+  }
+
+  return data;
+}
+
+function normalizeCourseData(apiData: ApiRecord, courseSlug: string): BasicCourseData {
+  const price = normalizeNumberString(apiData.price);
+  
+  // PERBAIKAN: Baca dari key "discount" bawaan API
+  const rawDiscount = Number(normalizeNumberString(apiData.discount));
+  
+  // Logika Pintar: Kalau diskon > 100, pasti itu Rupiah (Nominal). Kalau <= 100, itu Persen.
+  const discountMode: DiscountMode = rawDiscount > 100 ? 'nominal' : 'percent';
+  const discountValue = String(rawDiscount);
+
+  const totalPrice = apiData.total_price
+    ? normalizeNumberString(apiData.total_price)
+    : String(calculateTotalPrice(price, discountMode, discountValue));
+
+  return {
+    course_id: apiData.course_id
+      ? Number(apiData.course_id)
+      : Number.isFinite(Number(courseSlug))
+        ? Number(courseSlug)
+        : undefined,
+    title: typeof apiData.title === 'string' ? apiData.title : '',
+    thumbnail: typeof apiData.thumbnail === 'string' ? apiData.thumbnail : '',
+    level: typeof apiData.level === 'string' ? apiData.level : 'Beginner',
+    price,
+    discount: discountValue,
+    // Tetap simpan state terpisah untuk kebutuhan perhitungan FE
+    discount_nominal: discountMode === 'nominal' ? discountValue : '0',
+    discount_percent: discountMode === 'percent' ? discountValue : '0',
+    total_price: totalPrice,
+    isPublished: apiData.status === 1 || apiData.is_active === true,
+    category_id: apiData.category_id ? Number(apiData.category_id) : 1,
+    category_name: typeof apiData.category_name === 'string' ? apiData.category_name : 'Umum',
+    author: typeof apiData.author === 'string' ? apiData.author : '',
+    author_name: typeof apiData.author_name === 'string' ? apiData.author_name : '',
+    rating: apiData.rating ? String(apiData.rating) : '0.0',
+    students: apiData.students ? Number(apiData.students) : 0,
+    deskripsi: typeof apiData.deskripsi === 'string' ? apiData.deskripsi : '',
+    tech_stack: normalizeStringArray(apiData.tech_stack),
+    target_audience: normalizeStringArray(apiData.target_audience),
+  };
+}
+
+function resolveUploadedThumbnail(result: ThumbnailUpdateResponse | string | null): string {
+  if (!result || typeof result === 'string') return '';
+
+  return (
+    result.data?.thumbnail ||
+    result.thumbnail ||
+    result.url ||
+    result.file_url ||
+    result.data?.url ||
+    result.data?.file_url ||
+    ''
+  );
+}
+
+export function useCourseEditor(params: {
+  courseSlug: string;
+  categories: CourseCategory[];
+  showToast: ToastFn;
+  onUnauthorized: () => void;
+  currentOwnerId?: string;
+}) {
+  const { courseSlug, categories, showToast, onUnauthorized, currentOwnerId } = params;
+
+  const [basicData, setBasicData] = useState<BasicCourseData>(defaultBasicData);
+  const [initialBasicData, setInitialBasicData] = useState<BasicCourseData>(defaultBasicData);
+  const [isFetching, setIsFetching] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('percent');
+
+  const getActiveToken = useCallback(() => {
+    const cookieToken = Cookies.get('api_token');
+    if (cookieToken && cookieToken.length > 20) return cookieToken;
+    return process.env.NEXT_PUBLIC_API_TOKEN || '';
+  }, []);
+
+  const fetchCourseDetail = useCallback(async () => {
+    try {
+      setIsFetching(true);
+
+      if (!BASE_URL) throw new Error('Base URL API belum diset.');
+
+      const token = getActiveToken();
+      if (!token) throw new Error('Token API tidak tersedia.');
+
+      const response = await fetch(`${BASE_URL}/detail/course/${courseSlug}`, {
+        method: 'GET',
+        headers: buildJsonHeaders(token),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        onUnauthorized();
+        return;
+      }
+
+      const result = await readApiResponse<unknown>(response);
+
+      if (!response.ok) {
+        throw new Error(`Gagal mengambil detail course (Status ${response.status})`);
+      }
+
+      const apiData = extractCoursePayload(result, courseSlug);
+
+      if (apiData) {
+
+        // PERBAIKAN TUGAS B: Validasi Kepemilikan Kelas
+        if (currentOwnerId && apiData.owner_id && String(apiData.owner_id) !== String(currentOwnerId)) {
+          showToast('error', 'Akses Ditolak: Anda tidak memiliki hak untuk mengedit kelas ini.');
+          setTimeout(() => {
+             window.location.href = '/'; // Alihkan kembali ke beranda
+          }, 2000);
+          return;
+        }
+
+        const freshData = normalizeCourseData(apiData, courseSlug);
+        setBasicData(freshData);
+        setInitialBasicData(freshData);
+        setDiscountMode(Number(freshData.discount_nominal || 0) > 0 ? 'nominal' : 'percent');
+      }
+    } catch (error) {
+      console.error('Gagal mengambil detail course:', error);
+      showToast('error', error instanceof Error ? error.message : 'Gagal mengambil detail course.');
+    } finally {
+      setIsFetching(false);
+    }
+  }, [courseSlug, getActiveToken, onUnauthorized, showToast, currentOwnerId]);
+
+  useEffect(() => {
+    fetchCourseDetail();
+  }, [fetchCourseDetail]);
+
+  const handleBasicChange = useCallback(
+    (field: keyof BasicCourseData, value: string | boolean | number) => {
+      setBasicData((prev) => {
+        const next: BasicCourseData = { ...prev, [field]: value };
+
+        if (field === 'category_id') {
+          const selectedCategory = categories.find(
+            (category) => String(category.category_id) === String(value),
+          );
+
+          next.category_name = selectedCategory?.category_name || prev.category_name;
+        }
+
+        if (field === 'price' || field === 'discount') {
+          const nextPrice = field === 'price' ? String(value) : next.price;
+          const nextDiscount = field === 'discount' ? String(value) : next.discount;
+          const total = calculateTotalPrice(nextPrice, discountMode, nextDiscount);
+
+          next.total_price = String(total);
+          next.discount_percent = discountMode === 'percent' ? String(nextDiscount) : '';
+          next.discount_nominal = discountMode === 'nominal' ? String(nextDiscount) : '';
+        }
+
+        return next;
+      });
+    },
+    [categories, discountMode],
+  );
+
+  const switchDiscountMode = useCallback((mode: DiscountMode) => {
+    setDiscountMode(mode);
+    setBasicData((prev) => {
+      const total = calculateTotalPrice(prev.price, mode, prev.discount);
+
+      return {
+        ...prev,
+        discount_percent: mode === 'percent' ? prev.discount : '',
+        discount_nominal: mode === 'nominal' ? prev.discount : '',
+        total_price: String(total),
+      };
+    });
+  }, []);
+
+  // ✨ TAMBAHAN BARU: Fungsi untuk membatalkan edit
+  const discardChanges = useCallback(() => {
+    setBasicData(initialBasicData);
+    setDiscountMode(Number(initialBasicData.discount_nominal || 0) > 0 ? 'nominal' : 'percent');
+  }, [initialBasicData]);
+
+  // Konversi semua ke Number agar perubahan string '0' ke '' tidak memicu 'Unsaved Changes' palsu
+  const editablePayload = useMemo(
+    () => ({
+      title: basicData.title,
+      level: basicData.level,
+      price: Number(normalizeNumberString(basicData.price)) || 0,
+      category_id: basicData.category_id,
+      author: basicData.author,
+      discount_nominal: Number(normalizeNumberString(basicData.discount_nominal)) || 0,
+      discount_percent: Number(normalizeNumberString(basicData.discount_percent)) || 0,
+      total_price: Number(normalizeNumberString(basicData.total_price)) || 0,
+    }),
+    [basicData],
+  );
+
+  const initialEditablePayload = useMemo(
+    () => ({
+      title: initialBasicData.title,
+      level: initialBasicData.level,
+      price: Number(normalizeNumberString(initialBasicData.price)) || 0,
+      category_id: initialBasicData.category_id,
+      author: initialBasicData.author,
+      discount_nominal: Number(normalizeNumberString(initialBasicData.discount_nominal)) || 0,
+      discount_percent: Number(normalizeNumberString(initialBasicData.discount_percent)) || 0,
+      total_price: Number(normalizeNumberString(initialBasicData.total_price)) || 0,
+    }),
+    [initialBasicData],
+  );
+
+  const hasUnsavedChanges = JSON.stringify(editablePayload) !== JSON.stringify(initialEditablePayload);
+
+  const saveCourseChanges = useCallback(async () => {
+    try {
+      setIsSaving(true);
+      showToast('loading', 'Menyimpan perubahan kelas...');
+
+      if (!BASE_URL) throw new Error('API URL tidak diset.');
+
+      const token = getActiveToken();
+      if (!token) throw new Error('Token API tidak tersedia.');
+
+      const targetCourseId = basicData.course_id || courseSlug;
+
+      const payload = {
+        title: basicData.title.trim(),
+        level: basicData.level,
+        price: Number(normalizeNumberString(basicData.price)) || 0,
+        category_id: basicData.category_id,
+        author: basicData.author,
+        discount_nominal: Number(normalizeNumberString(basicData.discount_nominal)) || 0,
+        discount_percent: Number(normalizeNumberString(basicData.discount_percent)) || 0,
+        total_price: Number(normalizeNumberString(basicData.total_price)) || 0,
+      };
+
+      const response = await fetch(`${BASE_URL}/update/course/${targetCourseId}`, {
+        method: 'PUT',
+        headers: buildJsonHeaders(token),
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        onUnauthorized();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error('Gagal menyimpan perubahan kelas.');
+      }
+
+      setInitialBasicData(basicData);
+      showToast('success', 'Perubahan kelas berhasil disimpan.');
+    } catch (error) {
+      console.error('Save course failed:', error);
+      showToast('error', error instanceof Error ? error.message : 'Gagal menyimpan perubahan kelas.');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [basicData, courseSlug, getActiveToken, onUnauthorized, showToast]);
+
+  const updateThumbnail = useCallback(
+    async (file: File) => {
+      try {
+        setIsUploadingThumbnail(true);
+        showToast('loading', 'Mengunggah thumbnail kelas...');
+
+        if (!BASE_URL) throw new Error('Base URL tidak diset.');
+
+        const token = getActiveToken();
+        if (!token) throw new Error('Token API tidak tersedia.');
+
+        // ✨ FIX 1: TANGKAP ID DARI URL PARAMETER "?course=15" DENGAN AMAN
+        const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        const courseQueryId = searchParams ? searchParams.get('course') : '';
+
+        // Gabungkan prioritas: ID dari State (Jika ada) ATAU ID dari URL
+        const targetCourseId = basicData.course_id || courseQueryId;
+
+        // ✨ FIX 2: SABUK PENGAMAN (Mencegah error 404 karena ID undefined)
+        if (!targetCourseId || String(targetCourseId) === 'undefined') {
+          throw new Error('ID Kelas tidak ditemukan. Pastikan URL memiliki parameter ?course=...');
+        }
+
+        const formData = new FormData();
+        formData.append('thumbnail', file);
+
+        // Header murni tanpa Content-Type agar FormData terbaca sempurna
+        const customHeaders: HeadersInit = {
+          Accept: 'application/json',
+        };
+        if (token) {
+          customHeaders.Authorization = `Bearer ${token}`;
+        }
+
+        // ✨ FIX 3: KEMBALIKAN KE METHOD PUT MURNI 
+        const response = await fetch(`${BASE_URL}/update/course/thumbnail/${targetCourseId}`, {
+          method: 'PUT', 
+          headers: customHeaders,
+          body: formData,
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          onUnauthorized();
+          return;
+        }
+
+        const result = await readApiResponse<ThumbnailUpdateResponse>(response);
+
+        if (!response.ok) {
+          const message =
+            typeof result === 'object' && result !== null && 'message' in result
+              ? String(result.message)
+              : `Upload thumbnail gagal (Status ${response.status})`;
+
+          throw new Error(message);
+        }
+
+        const uploadedUrl = resolveUploadedThumbnail(result);
+
+        if (uploadedUrl) {
+          setBasicData((prev) => ({ ...prev, thumbnail: uploadedUrl }));
+          setInitialBasicData((prev) => ({ ...prev, thumbnail: uploadedUrl }));
+        } else {
+          // Fallback memuat gambar langsung dari memori komputer jika API tidak membalas URL
+          const localPreviewUrl = URL.createObjectURL(file);
+          setBasicData((prev) => ({ ...prev, thumbnail: localPreviewUrl }));
+          setInitialBasicData((prev) => ({ ...prev, thumbnail: localPreviewUrl }));
+        }
+
+        showToast('success', 'Thumbnail kelas berhasil diperbarui.');
+      } catch (error) {
+        console.error('Thumbnail update failed:', error);
+        showToast('error', error instanceof Error ? error.message : 'Gagal memperbarui thumbnail.');
+      } finally {
+        setIsUploadingThumbnail(false);
+      }
+    },
+    [basicData.course_id, getActiveToken, onUnauthorized, showToast],
+  );
+
+  const resolvedCourseId =
+    basicData.course_id || (Number.isFinite(Number(courseSlug)) ? Number(courseSlug) : undefined);
+
+  return {
+    basicData,
+    isFetching,
+    isSaving,
+    isUploadingThumbnail,
+    discountMode,
+    hasUnsavedChanges,
+    resolvedCourseId,
+    getActiveToken,
+    handleBasicChange,
+    switchDiscountMode,
+    saveCourseChanges,
+    updateThumbnail,
+    refetchCourseDetail: fetchCourseDetail,
+    discardChanges,
+  };
+}
+
+export default useCourseEditor;
