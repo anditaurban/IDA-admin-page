@@ -10,7 +10,7 @@ interface ArticleWorkspaceProps {
   title: string;
   setTitle: (val: string) => void;
   initialContent: string;
-  onContentUpdate: (html: string) => void;
+  onContentUpdate?: (html: string) => void;
   onSave: (payload: { content: string }) => void;
   onDelete: () => void;
 }
@@ -62,7 +62,7 @@ export default function ArticleWorkspace({ title, setTitle, initialContent, onCo
     immediatelyRender: false,
     content: cleanContent,
     onUpdate: ({ editor }) => {
-      onContentUpdate(editor.getHTML());
+      onContentUpdate?.(editor.getHTML());
     },
     editorProps: {
       attributes: {
