@@ -130,50 +130,71 @@ export function useInstructorDashboard() {
       try {
         if (!BASE_URL || !activeOwnerId) throw new Error('ENV_OR_OWNER_ID_MISSING');
 
-        // ✨ KITA KIRIM parameter user_id ke backend (Semoga backend bisa membacanya)
         const userParam = activeUserId ? `&user_id=${activeUserId}` : '';
-        const limitParam = '&limit=12&per_page=12'; // Kita pakai 12 card
-
-        const endpoint = search
-          ? `${BASE_URL}/table/courses/${activeOwnerId}/${page}?search=${encodeURIComponent(search)}${limitParam}${userParam}`
-          : `${BASE_URL}/table/course/${activeOwnerId}/${page}?${limitParam.substring(1)}${userParam}`;
-
         const activeToken = getActiveToken();
         const headers: HeadersInit = { Accept: 'application/json', 'Content-Type': 'application/json' };
         if (activeToken) headers.Authorization = `Bearer ${activeToken}`;
 
-        const response = await fetch(endpoint, { method: 'GET', headers });
-
-        if (response.status === 401 || response.status === 403) {
-          showToast('error', 'Sesi login Anda telah berakhir.');
-          performLogout();
-          return;
-        }
-        if (!response.ok) throw new Error(`API_ERROR: HTTP ${response.status}`);
-
-        const data = await response.json();
-        const rawTableData = Array.isArray(data.tableData) ? data.tableData : [];
-
-        // ✨ FILTER FRONTEND (Sabuk Pengaman): Jika backend mengabaikan parameter user_id, 
-        // kita terpaksa menyaringnya di sini agar user tidak melihat kelas instruktur lain.
-        const myCourses = activeUserId 
-          ? rawTableData.filter((item: ApiCourseItem) => String(item.user_id) === activeUserId)
-          : rawTableData;
-
-        const formattedData: CourseItem[] = myCourses.map((item: ApiCourseItem) => {
+        // 🛠️ FUNGSI BANTUAN PENGAMBIL DATA PER HALAMAN
+        const fetchPageFromBackend = async (pageNumber: number) => {
+          const endpoint = search
+            ? `${BASE_URL}/table/course/${activeOwnerId}/${pageNumber}?search=${encodeURIComponent(search)}${userParam}`
+            : `${BASE_URL}/table/course/${activeOwnerId}/${pageNumber}?${userParam}`;
           
-          // ✨ PERBAIKAN LOGIC RENDER THUMBNAIL
+          const response = await fetch(endpoint, { method: 'GET', headers });
+          if (!response.ok) {
+            if (response.status === 401 || response.status === 403) throw new Error('UNAUTHORIZED');
+            return { tableData: [], totalPages: 1 }; // Return kosong jika error 404/500 dll
+          }
+          return await response.json();
+        };
+
+        // ✨ 1. AMBIL HALAMAN PERTAMA (Untuk mengecek ada berapa total halaman di Backend)
+        const firstData = await fetchPageFromBackend(1);
+        let allRawData = Array.isArray(firstData.tableData) ? [...firstData.tableData] : [];
+        const backendTotalPages = firstData.totalPages || 1;
+
+        // ✨ 2. JURUS SAPU JAGAT: Jika backend memecah data ke beberapa halaman, sedot semuanya!
+        if (backendTotalPages > 1) {
+          const promises = [];
+          // Kita loop mulai dari halaman 2 sampai halaman terakhir milik backend
+          for (let i = 2; i <= backendTotalPages; i++) {
+            promises.push(fetchPageFromBackend(i));
+          }
+          // Eksekusi secara bersamaan (Parallel) agar super cepat
+          const results = await Promise.all(promises);
+          results.forEach(res => {
+            if (Array.isArray(res.tableData)) {
+              allRawData = [...allRawData, ...res.tableData]; // Gabungkan semua kelas!
+            }
+          });
+        }
+
+        // ✨ 3. SARING DATA KITA (Sekarang kita punya akses ke 100% database)
+        const myCourses = activeUserId
+          ? allRawData.filter((item: ApiCourseItem) => String(item.user_id) === activeUserId)
+          : allRawData;
+
+        // ✨ 4. PAGINASI LOKAL (Kita atur 10 Course per Halaman)
+        const itemsPerPage = 10;
+        const finalTotalItems = myCourses.length; // Ini PASTI menemukan 12/13 kelas Anda!
+        const finalTotalPages = Math.ceil(finalTotalItems / itemsPerPage) || 1;
+
+        // Sabuk Pengaman Paginasi: Mencegah user nyasar ke halaman yang kosong
+        const safePage = page > finalTotalPages ? finalTotalPages : (page < 1 ? 1 : page);
+
+        // Potong array data khusus untuk halaman yang sedang dibuka
+        const startIndex = (safePage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        const paginatedCourses = myCourses.slice(startIndex, endIndex);
+
+        // ✨ 5. FORMAT DATA UNTUK DITAMPILKAN
+        const formattedData: CourseItem[] = paginatedCourses.map((item: ApiCourseItem) => {
           let displayThumb = item.thumbnail || '';
           
           if (displayThumb) {
-            // Jika thumbnail bukan URL utuh (http), bukan data base64 (data:), dan bukan CSS (bg-)
             if (!displayThumb.startsWith('http') && !displayThumb.startsWith('bg-') && !displayThumb.startsWith('data:')) {
-              // Contoh displayThumb: "/uploads/courses/course-1779082057053-820295276.jpg"
-              // Kita ekstrak nama filenya saja (bagian paling belakang)
               const filename = displayThumb.split('/').pop(); 
-              
-              // Lalu kita tembakkan ke endpoint khusus thumbnail
-              // Hasilnya: "https://api-anda.com/thumbnail/course/course-1779082057053-820295276.jpg"
               displayThumb = `${BASE_URL}/thumbnail/course/${filename}`;
             }
           }
@@ -195,35 +216,18 @@ export function useInstructorDashboard() {
           };
         });
 
+        // ✨ 6. SIMPAN SEMUA KONDISI KE STATE
         setCourses(formattedData);
-        setTotalPages(data.totalPages || 1);
-        setCurrentPage(data.currentPage || page);
-        
-        // 1. Tentukan Total Items milik Instruktur ini
-        let finalTotalItems = formattedData.length;
-        const isBackendMixed = activeUserId && myCourses.length !== rawTableData.length;
+        setTotalItems(finalTotalItems); // Pasti Akurat! (misal: 13)
+        setTotalPages(finalTotalPages); // Pasti Akurat! (misal: 2)
+        setCurrentPage(safePage);
 
-        if (isBackendMixed) {
-          finalTotalItems = formattedData.length;
-        } else {
-          const exactTotalFromAPI = data.totalRecords ?? data.total_data ?? data.totalItems ?? data.total ?? null;
-          finalTotalItems = exactTotalFromAPI !== null ? Number(exactTotalFromAPI) : formattedData.length;
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+          showToast('error', 'Sesi login Anda telah berakhir.');
+          performLogout();
+          return;
         }
-
-        setTotalItems(finalTotalItems);
-
-        // ✨ 2. PERBAIKAN LOGIC TOTAL PAGES
-        // Jika data campur, kita hitung ulang total halamannya secara mandiri (dibagi 12 kelas per halaman)
-        // Jika tidak, baru kita gunakan totalPages dari Backend.
-        const calculatedTotalPages = isBackendMixed 
-          ? Math.ceil(finalTotalItems / 12) || 1
-          : (data.totalPages || 1);
-
-        setTotalPages(calculatedTotalPages);
-        setCurrentPage(data.currentPage || page);
-        setCourses(formattedData);
-
-      } catch (error) {
         console.error('Gagal memuat data kelas:', error);
         setCourses([]);
         setTotalPages(1);

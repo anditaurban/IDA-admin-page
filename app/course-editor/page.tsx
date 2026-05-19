@@ -1,6 +1,12 @@
 "use client";
 
-import React, { Suspense, useCallback, useState, useSyncExternalStore } from "react";
+import React, {
+  Suspense,
+  useCallback,
+  useState,
+  useEffect,
+  useSyncExternalStore,
+} from "react";
 import { DM_Sans, Inter } from "next/font/google";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +18,9 @@ import VideosTab from "@/components/editor/VideosTab";
 import AssignmentsTab from "@/components/editor/AssignmentsTab";
 import ReviewsTab from "@/components/editor/ReviewsTab";
 import CourseBasicEditor from "@/components/editor/CourseBasicEditor";
-import CourseTabNavigation, { CourseEditorTab } from "@/components/editor/CourseTabNavigation";
+import CourseTabNavigation, {
+  CourseEditorTab,
+} from "@/components/editor/CourseTabNavigation";
 import { useCourseEditor } from "@/hooks/useCourseEditor";
 import { useCourseCategories } from "@/hooks/useCourseCategories";
 import { useCourseLevels } from "@/hooks/useCourseLevels";
@@ -56,17 +64,37 @@ function CourseEditorContent() {
   const { showToast } = useToast();
   const courseSlug = searchParams.get("course") || "default-course";
 
-  const [activeTab, setActiveTab] = useState<CourseEditorTab>("overview");
+  const urlTab = searchParams.get("tab");
+  
+  // ✨ FIX: Berikan tipe <CourseEditorTab> pada useState dan asersi (as CourseEditorTab) pada urlTab
+  const [activeTab, setActiveTab] = useState<CourseEditorTab>(
+    (urlTab as CourseEditorTab) || "overview"
+  );
+
+  // ✨ TAMBAHKAN INI: Agar ketika pindah halaman dari Article Builder, tab-nya langsung otomatis pindah ke Materials tanpa perlu refresh manual
+  useEffect(() => {
+    if (urlTab) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveTab(urlTab as CourseEditorTab);
+    }
+  }, [urlTab]);
   // ✨ STATE BARU: View vs Edit Mode
   const [isEditing, setIsEditing] = useState(false);
 
-  const ownerId = useSyncExternalStore(emptySubscribe, getResolvedOwnerId, () => "");
+  const ownerId = useSyncExternalStore(
+    emptySubscribe,
+    getResolvedOwnerId,
+    () => "",
+  );
 
   const handleAuthError = useCallback(() => {
     Cookies.remove("auth_session");
     Cookies.remove("api_token");
     Cookies.remove("token");
-    showToast("error", "Sesi login Anda telah berakhir. Silakan masuk kembali.");
+    showToast(
+      "error",
+      "Sesi login Anda telah berakhir. Silakan masuk kembali.",
+    );
     router.replace("/login");
   }, [router, showToast]);
 
@@ -101,7 +129,9 @@ function CourseEditorContent() {
     currentOwnerId: ownerId,
   });
 
-  const headerCourseTitle = basicData.title?.trim() || (isFetching ? "Memuat judul kelas..." : courseSlug);
+  const headerCourseTitle =
+    basicData.title?.trim() ||
+    (isFetching ? "Memuat judul kelas..." : courseSlug);
 
   // ... (kode atas tetap sama)
 
@@ -112,13 +142,20 @@ function CourseEditorContent() {
   };
 
   return (
-    <div className={`min-h-screen bg-[#f4f5f7] dark:bg-[#050505] ${inter.className} pb-32 selection:bg-[#00BCD4]/30`}>
+    <div
+      className={`min-h-screen bg-[#f4f5f7] dark:bg-[#050505] ${inter.className} pb-32 selection:bg-[#00BCD4]/30`}
+    >
       <header className="h-18 bg-white/70 dark:bg-[#0a0a0a]/70 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between px-6 sticky top-0 z-50">
-        
         {/* ✨ KEMBALIKAN BAGIAN KIRI INI (Link Back & Judul) */}
         <div className="flex items-center gap-5">
-          <Link href="/" className="group flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all text-slate-500 hover:text-slate-900 dark:hover:text-white" title="Kembali ke Dashboard">
-            <span className="material-symbols-outlined text-[20px] transition-colors">arrow_back</span>
+          <Link
+            href="/"
+            className="group flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            title="Kembali ke Dashboard"
+          >
+            <span className="material-symbols-outlined text-[20px] transition-colors">
+              arrow_back
+            </span>
             <span className="hidden sm:inline text-sm font-bold">Beranda</span>
           </Link>
 
@@ -126,10 +163,15 @@ function CourseEditorContent() {
 
           <div>
             <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#00BCD4] uppercase tracking-widest mb-0.5">
-              <span className="material-symbols-outlined text-[14px]">tune</span>
+              <span className="material-symbols-outlined text-[14px]">
+                tune
+              </span>
               <span>Workspace Editor</span>
             </div>
-            <h1 className={`text-sm font-bold text-slate-900 dark:text-white ${googleSansAlt.className}`} title={headerCourseTitle}>
+            <h1
+              className={`text-sm font-bold text-slate-900 dark:text-white ${googleSansAlt.className}`}
+              title={headerCourseTitle}
+            >
               {headerCourseTitle}
             </h1>
           </div>
@@ -146,13 +188,25 @@ function CourseEditorContent() {
 
           <button
             onClick={handleSaveClick}
-            disabled={isSaving || isFetching || !basicData.title || isUploadingThumbnail}
+            disabled={
+              isSaving || isFetching || !basicData.title || isUploadingThumbnail
+            }
             className={`flex items-center gap-2 px-6 py-2.5 bg-[#00BCD4] hover:bg-cyan-500 text-white rounded-full text-sm font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all disabled:opacity-70 disabled:cursor-not-allowed ${googleSansAlt.className}`}
           >
             {isSaving ? (
-              <><span className="material-symbols-outlined text-[18px] animate-spin">sync</span> Menyimpan...</>
+              <>
+                <span className="material-symbols-outlined text-[18px] animate-spin">
+                  sync
+                </span>{" "}
+                Menyimpan...
+              </>
             ) : (
-              <><span className="material-symbols-outlined text-[18px]">save</span> Simpan Perubahan</>
+              <>
+                <span className="material-symbols-outlined text-[18px]">
+                  save
+                </span>{" "}
+                Simpan Perubahan
+              </>
             )}
           </button>
         </div>
@@ -162,6 +216,7 @@ function CourseEditorContent() {
         {/* ✨ PASS FUNGSI TOGGLE EDIT KE KOMPONEN BAWAH */}
         <CourseBasicEditor
           basicData={basicData}
+          courseSlug={courseSlug}
           categories={categories}
           levels={levels}
           isFetching={isFetching}
@@ -169,7 +224,7 @@ function CourseEditorContent() {
           isLevelLoading={isLevelLoading}
           isUploadingThumbnail={isUploadingThumbnail}
           discountMode={discountMode}
-          isEditing={isEditing} 
+          isEditing={isEditing}
           onEditToggle={() => setIsEditing(true)}
           onCancelToggle={() => {
             discardChanges();
@@ -178,7 +233,7 @@ function CourseEditorContent() {
           onChange={handleBasicChange}
           onDiscountModeChange={switchDiscountMode}
           onThumbnailUpload={updateThumbnail}
-          onFileError={(message) => showToast("error", message)}
+          onFileError={(message: string) => showToast("error", message)}
         />
 
         <CourseTabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
@@ -199,7 +254,9 @@ function CourseEditorContent() {
             />
           )}
 
-          {!isFetching && activeTab === "materials" && <MaterialsTab courseSlug={courseSlug} />}
+          {!isFetching && activeTab === "materials" && (
+            <MaterialsTab courseSlug={courseSlug} />
+          )}
           {!isFetching && activeTab === "videos" && <VideosTab />}
           {!isFetching && activeTab === "assignments" && <AssignmentsTab />}
           {!isFetching && activeTab === "reviews" && <ReviewsTab />}
@@ -211,7 +268,16 @@ function CourseEditorContent() {
 
 export default function CourseEditorPage() {
   return (
-    <Suspense fallback={<div className="flex flex-col items-center justify-center min-h-screen bg-[#f4f5f7] dark:bg-[#050505] text-slate-500 gap-4"><span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span><p className="text-sm font-medium">Memuat Workspace...</p></div>}>
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center min-h-screen bg-[#f4f5f7] dark:bg-[#050505] text-slate-500 gap-4">
+          <span className="material-symbols-outlined text-[32px] animate-spin">
+            progress_activity
+          </span>
+          <p className="text-sm font-medium">Memuat Workspace...</p>
+        </div>
+      }
+    >
       <CourseEditorContent />
     </Suspense>
   );
