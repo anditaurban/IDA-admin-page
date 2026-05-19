@@ -68,7 +68,7 @@ function BuilderContent() {
     ? {
         content: activeModuleInfo.content_html || "",
         url: activeModuleInfo.file_url || "",
-        description: "",
+        description: activeModuleInfo.content_html || "", // ✨ FIX: Gunakan content_html untuk mengisi deskripsi dokumen
       }
     : null;
 
@@ -128,8 +128,16 @@ function BuilderContent() {
   const onWorkspaceSave = async (payload: {
     content?: string;
     url?: string;
+    title?: string;
   }) => {
-    await handleSaveActiveChapter(activeChapter, chapterTitle, payload);
+    // ✨ FIX: Gunakan payload.title jika tersedia dari Workspace terbaru, jika tidak gunakan fallback
+    const finalTitle = payload.title !== undefined ? payload.title : chapterTitle;
+    await handleSaveActiveChapter(activeChapter, finalTitle, payload);
+    
+    // Langsung perbarui state UI Sidebar dengan judul yang baru disimpan
+    if (payload.title !== undefined) {
+       setChapterTitle(payload.title);
+    }
   };
 
   const onWorkspaceDelete = async () => {

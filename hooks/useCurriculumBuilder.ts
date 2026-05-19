@@ -6,7 +6,6 @@ const RAW_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const BASE_URL = RAW_BASE_URL.endsWith('/') ? RAW_BASE_URL.slice(0, -1) : RAW_BASE_URL;
 const OWNER_ID = process.env.NEXT_PUBLIC_OWNER_ID || '';
 
-// ✨ FIX: Tambahkan order_index agar kita bisa memaksa pengurutan
 export interface ApiMaterial {
   material_id: number | string;
   title: string;
@@ -85,8 +84,6 @@ export const useCurriculumBuilder = (courseSlug: string) => {
       const resJson = await response.json();
 
       if (resJson.status === 'success' && resJson.detail?.curriculum) {
-        
-        // ✨ ALGORITMA PENGURUTAN 1: Urutkan Section secara paksa berdasarkan order_index (atau section_id jika kosong)
         const rawSections = resJson.detail.curriculum as ApiSection[];
         rawSections.sort((a, b) => {
            const orderA = a.order_index ?? Number(a.section_id);
@@ -95,8 +92,6 @@ export const useCurriculumBuilder = (courseSlug: string) => {
         });
 
         const mappedModules: Module[] = rawSections.map((sec: ApiSection) => {
-          
-          // ✨ ALGORITMA PENGURUTAN 2: Urutkan Materials di dalam Section secara paksa
           const rawMaterials = sec.materials || [];
           rawMaterials.sort((a, b) => {
              const matOrderA = a.order_index ?? Number(a.material_id);
@@ -136,12 +131,9 @@ export const useCurriculumBuilder = (courseSlug: string) => {
     }
   }, [courseSlug, getToken, showToast]);
 
-  // (CATATAN: Biarkan fungsi handleAddSection, handleAddChapter, dsb yang ada di bawahnya tetap seperti sebelumnya, jangan dihapus)
-
-  // ✨ UPGRADE 2: UX Loading & Fallback Pencari ID Otomatis
   const handleAddSection = async (onSuccess: (newSectionId: string) => void) => {
     setIsProcessing(true);
-    showToast('loading', 'Menyiapkan bagian kelas baru...'); // Notifikasi UX
+    showToast('loading', 'Menyiapkan bagian kelas baru...');
     
     try {
       const parsedOwnerId = isNaN(Number(OWNER_ID)) ? OWNER_ID : Number(OWNER_ID);
@@ -164,18 +156,33 @@ export const useCurriculumBuilder = (courseSlug: string) => {
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       const res = await response.json();
       
-      // 1. Selalu paksa sinkronisasi kurikulum
-      const freshModules = await fetchCurriculum(); 
+      // ✨ FIX: Terkadang API membungkus ID secara berbeda. Pastikan selalu ter-cast ke String.
+      let newSectionId = String(res.data?.section_id || res.detail?.section_id || res.section_id || res.id);
       
-      // 2. Coba tangkap ID dari berbagai kemungkinan format Backend
-      const newSectionId = res.data?.section_id || res.detail?.section_id || res.section_id || res.id;
-      
-      if (newSectionId) {
-         onSuccess(String(newSectionId));
-      } else if (freshModules && freshModules.length > 0) {
-         // 3. Fallback Ekstrem: Jika API tidak membalas ID, tangkap otomatis dari section paling bawah
-         const lastSection = freshModules[freshModules.length - 1];
-         onSuccess(lastSection.id);
+      // Jika API gagal mengembalikan ID (misal karena response strukturnya aneh), jangan gunakan Date.now()
+      // karena akan menyebabkan masalah saat mau CRUD lagi nanti. Mending force fetch.
+      if (!newSectionId || newSectionId === "undefined" || newSectionId === "null") {
+          console.warn("API did not return a clear Section ID. Fetching curriculum to sync...");
+          const freshModules = await fetchCurriculum();
+          if (freshModules && freshModules.length > 0) {
+              const lastSection = freshModules[freshModules.length - 1];
+              newSectionId = lastSection.id;
+          } else {
+              throw new Error("Failed to sync after adding section.");
+          }
+      } else {
+          // Optimistic Update hanya jika kita YAKIN ID-nya benar dari backend
+          const newModule: Module = {
+            id: newSectionId,
+            section: payload.title,
+            chapters: []
+          };
+          setModules(prev => [...prev, newModule]);
+      }
+
+      // Pastikan onSuccess dipanggil di dalam blok try
+      if (typeof onSuccess === 'function') {
+          onSuccess(newSectionId);
       }
       
       showToast('success', 'Bagian baru berhasil ditambahkan.');
@@ -183,13 +190,15 @@ export const useCurriculumBuilder = (courseSlug: string) => {
       console.error(error);
       showToast('error', 'Gagal menambahkan bagian baru.');
     } finally {
-      setIsProcessing(false);
+      setIsProcessing(false); // Pastikan ini SELALU terpanggil
     }
   };
 
   const handleSaveSectionTitle = async (id: string, newTitle: string) => {
     const mod = modules.find(m => m.id === id);
     if (!mod || mod.section === newTitle) return true;
+
+    setModules(prev => prev.map(m => m.id === id ? { ...m, section: newTitle } : m));
 
     try {
       const response = await fetch(`${BASE_URL}/update/course_section/${id}`, {
@@ -198,10 +207,10 @@ export const useCurriculumBuilder = (courseSlug: string) => {
         body: JSON.stringify({ title: newTitle || "Bagian Tanpa Nama" })
       });
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
-      fetchCurriculum();
       return true;
     } catch (error) {
       console.error(error);
+      setModules(prev => prev.map(m => m.id === id ? { ...m, section: mod.section } : m));
       showToast('error', 'Gagal menyimpan nama bagian.');
       return false;
     }
@@ -221,8 +230,9 @@ export const useCurriculumBuilder = (courseSlug: string) => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }
       });
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
+      
+      setModules(prev => prev.filter(m => m.id !== id));
       showToast('success', 'Bagian berhasil dihapus.');
-      fetchCurriculum();
       return true;
     } catch (error) {
       console.error(error);
@@ -233,10 +243,9 @@ export const useCurriculumBuilder = (courseSlug: string) => {
     }
   };
 
-  // ✨ UPGRADE 3: UX Loading & Fallback Pencari ID Otomatis
   const handleAddChapter = async (targetSectionId: string, type: 'article' | 'document', onSuccess: (newChapterId: string) => void) => {
     setIsProcessing(true);
-    showToast('loading', 'Menyiapkan materi baru...'); // Notifikasi UX
+    showToast('loading', 'Menyiapkan materi baru...');
     
     try {
       const mod = modules.find(m => m.id === targetSectionId);
@@ -262,22 +271,37 @@ export const useCurriculumBuilder = (courseSlug: string) => {
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       const res = await response.json();
       
-      // 1. Selalu paksa sinkronisasi kurikulum
-      const freshModules = await fetchCurriculum(); 
+      let newChapterId = String(res.data?.material_id || res.detail?.material_id || res.material_id || res.id);
       
-      // 2. Coba tangkap ID
-      const newChapterId = res.data?.material_id || res.detail?.material_id || res.material_id || res.id;
-      
-      if (newChapterId) {
-         onSuccess(String(newChapterId));
-      } else if (freshModules) {
-         // 3. Fallback Ekstrem: Tangkap otomatis materi paling bawah di section tersebut
-         const targetSection = freshModules.find(m => m.id === targetSectionId);
-         if (targetSection && targetSection.chapters.length > 0) {
-            onSuccess(targetSection.chapters[targetSection.chapters.length - 1].id);
-         }
+      if (!newChapterId || newChapterId === "undefined" || newChapterId === "null") {
+          const freshModules = await fetchCurriculum();
+          const targetSection = freshModules?.find(m => String(m.id) === String(targetSectionId));
+          if (targetSection && targetSection.chapters.length > 0) {
+             newChapterId = targetSection.chapters[targetSection.chapters.length - 1].id;
+          } else {
+             throw new Error("Failed to sync after adding material.");
+          }
+      } else {
+          const newChapter: Chapter = {
+            id: newChapterId,
+            title: dynamicTitle,
+            type: type,
+            status: 'draft',
+            content_html: '',
+            file_url: ''
+          };
+
+          setModules(prev => prev.map(m => {
+            if (m.id === targetSectionId) {
+              return { ...m, chapters: [...m.chapters, newChapter] };
+            }
+            return m;
+          }));
       }
-      
+
+      if (typeof onSuccess === 'function') {
+         onSuccess(newChapterId);
+      }
       showToast('success', 'Materi baru berhasil ditambahkan.');
     } catch (error) {
       console.error(error);
@@ -287,14 +311,12 @@ export const useCurriculumBuilder = (courseSlug: string) => {
     }
   };
 
-  // ✨ PERBAIKAN URL: Hapus courseSlug dari endpoint
   const handleSaveActiveChapter = async (activeChapterId: string, chapterTitle: string, payload: { content?: string, url?: string }) => {
       if (!chapterTitle.trim()) {
           showToast('error', 'Judul materi tidak boleh kosong!');
           return false;
       }
       
-      setIsProcessing(true);
       try {
         const requestPayload = { 
           title: chapterTitle, 
@@ -302,7 +324,6 @@ export const useCurriculumBuilder = (courseSlug: string) => {
           file_url: payload.url || ''
         };
 
-        // URL dikembalikan ke format normal: /update/course_material/{id}
         const response = await fetch(`${BASE_URL}/update/course_material/${activeChapterId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
@@ -310,31 +331,47 @@ export const useCurriculumBuilder = (courseSlug: string) => {
         });
 
         if (!response.ok) throw new Error(`API Error: ${response.status}`);
-        showToast('success', 'Perubahan berhasil disimpan ke server!');
-        fetchCurriculum();
+        
+        setModules(prev => prev.map(mod => ({
+          ...mod,
+          chapters: mod.chapters.map(chap => 
+            chap.id === activeChapterId 
+              ? { 
+                  ...chap, 
+                  title: chapterTitle, 
+                  content_html: payload.content !== undefined ? payload.content : chap.content_html,
+                  file_url: payload.url !== undefined ? payload.url : chap.file_url,
+                  status: (payload.content || payload.url) ? 'published' : chap.status
+                } 
+              : chap
+          )
+        })));
+
+        showToast('success', 'Perubahan berhasil disimpan!');
         return true;
       } catch (error) {
         console.error(error);
         showToast('error', 'Gagal menyimpan perubahan materi.');
         return false;
-      } finally {
-        setIsProcessing(false);
       }
   };
 
-  // ✨ PERBAIKAN URL: Hapus courseSlug dari endpoint
   const handleDeleteActiveChapter = async (activeChapterId: string) => {
       setIsProcessing(true);
       try {
-        // URL dikembalikan ke format normal: /delete/course_material/{id}
         const response = await fetch(`${BASE_URL}/delete/course_material/${activeChapterId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }
         });
 
         if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        
+        setModules(prev => prev.map(mod => ({
+          ...mod,
+          chapters: mod.chapters.filter(chap => chap.id !== activeChapterId)
+        })));
+
         showToast('success', 'Materi berhasil dihapus.');
-        fetchCurriculum();
         return true;
       } catch (error) {
         console.error(error);
