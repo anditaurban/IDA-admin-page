@@ -20,7 +20,7 @@ export default function CourseCard({
   course: CourseItem;
   onCourseDeleted?: (id: string) => void;
 }) {
-  // ✨ FIX FINAL: Menghapus /api jika ada & mengamankan logika gambar
+
   const displayThumbnail = React.useMemo(() => {
     const rawBaseUrl =
       process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -28,7 +28,6 @@ export default function CourseCard({
       "";
     let baseUrl = rawBaseUrl.replace(/\/+$/, ""); // Bersihkan slash di akhir
 
-    // 🚨 JIKA baseUrl mengandung '/api' di ujungnya, kita potong agar murni mengambil root domain untuk gambar
     if (baseUrl.endsWith("/api")) {
       baseUrl = baseUrl.slice(0, -4);
     }
@@ -127,9 +126,7 @@ export default function CourseCard({
       if (onCourseDeleted) {
         onCourseDeleted(String(course.id));
       }
-      
-      // Tunggu sebentar saja (misal 500ms) agar toast sempat muncul di layar, 
-      // lalu paksa browser melakukan refresh seperti menekan F5.
+
       setTimeout(() => {
         window.location.reload();
       }, 500); 
@@ -256,7 +253,7 @@ export default function CourseCard({
         </div>
 
         {/* MENU 3 TITIK */}
-        <div className="absolute top-3 right-3 z-30" ref={menuRef}>
+        <div className="absolute top-3 right-3 z-10" ref={menuRef}>
           <button
             onClick={(e) => {
               e.preventDefault();

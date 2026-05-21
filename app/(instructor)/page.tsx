@@ -65,15 +65,21 @@ export default function InstructorDashboardContent() {
         </div>
 
         {/* STATS OVERVIEW */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {instructorStats.map((stat) => (
-            <div key={stat.id} className="bg-white dark:bg-[#111111] p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-5 hover:-translate-y-1 transition-transform duration-300">
-              <div className={`size-14 rounded-2xl flex items-center justify-center ${stat.bg} ${stat.color}`}>
-                <span className="material-symbols-outlined text-[28px]">{stat.icon}</span>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
+          {instructorStats.map((stat, index) => (
+            <div 
+              key={stat.id} 
+              // ✨ UX: Item ke-3 (index 2) akan span 2 kolom di mobile agar layout tidak bolong
+              className={`bg-white dark:bg-[#111111] p-4 md:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 md:gap-5 hover:-translate-y-1 transition-transform duration-300 ${
+                index === 2 ? 'col-span-2 md:col-span-1' : 'col-span-1'
+              }`}
+            >
+              <div className={`size-10 md:size-14 rounded-2xl flex items-center justify-center shrink-0 ${stat.bg} ${stat.color}`}>
+                <span className="material-symbols-outlined text-[24px] md:text-[28px]">{stat.icon}</span>
               </div>
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{stat.label}</p>
-                <p className={`text-2xl font-extrabold text-slate-900 dark:text-white ${googleSansAlt.className}`}>{stat.value}</p>
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5 truncate">{stat.label}</p>
+                <p className={`text-lg md:text-2xl font-extrabold text-slate-900 dark:text-white truncate ${googleSansAlt.className}`}>{stat.value}</p>
               </div>
             </div>
           ))}
@@ -117,46 +123,80 @@ export default function InstructorDashboardContent() {
             </div>
           ) : (
             <>
-              {/* ✨ KELAS DENGAN MAX LIMIT 9 (3x3 GRID) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {/* ✨ KELAS (Tampil 2 Card di Mobile, 3 di Desktop) */}
+              <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 md:gap-6">
                 {courses.length === 0 ? (
                   <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
                     <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">inbox</span>
-                    <p className="text-slate-500 font-medium">Tidak ada kelas yang ditemukan untuk akun ini.</p>
+                    <p className="text-slate-500 font-medium text-sm md:text-base">Tidak ada kelas yang ditemukan untuk akun ini.</p>
                   </div>
                 ) : (
                   courses.map((course) => <CourseCard key={course.id} course={course} />)
                 )}
               </div>
 
-              {/* ✨ BUNGKUS DENGAN PENGECEKAN totalPages > 1 */}
               {totalPages > 1 && (
-                <div className="mt-8 flex items-center justify-center gap-3">
+                <div className="mt-8 flex items-center justify-center gap-2 sm:gap-3">
+                  
+                  {/* ⏪ Tombol Ke Halaman Pertama */}
                   <button
-                    disabled={currentPage === 1}
+                    disabled={currentPage <= 1}
+                    onClick={() => fetchCourses(1, searchQuery)}
+                    title="Ke Halaman Pertama"
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-sm block">keyboard_double_arrow_left</span>
+                  </button>
+
+                  {/* ◀️ Tombol Sebelumnya (Prev) */}
+                  <button
+                    disabled={currentPage <= 1}
                     onClick={() => fetchCourses(currentPage - 1, searchQuery)}
-                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Halaman Sebelumnya"
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <span className="material-symbols-outlined text-sm block">chevron_left</span>
                   </button>
-                  <span className="text-sm font-bold text-slate-600 dark:text-slate-400 px-4">
-                    Hal {currentPage} dari {totalPages}
-                  </span>
+
+                  {/* 🔢 Indikator Halaman (Dipercantik) */}
+                  <div className="px-4 py-2 rounded-xl bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-2">
+                    <span className="text-sm font-bold text-slate-600 dark:text-slate-400">
+                      Hal <span className="text-[#00BCD4]">{currentPage}</span> dari {totalPages}
+                    </span>
+                  </div>
+
+                  {/* ▶️ Tombol Berikutnya (Next) */}
                   <button
-                    disabled={currentPage === totalPages}
+                    disabled={currentPage >= totalPages}
                     onClick={() => fetchCourses(currentPage + 1, searchQuery)}
-                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Halaman Berikutnya"
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <span className="material-symbols-outlined text-sm block">chevron_right</span>
                   </button>
+
+                  {/* ⏩ Tombol Ke Halaman Terakhir */}
+                  <button
+                    disabled={currentPage >= totalPages}
+                    onClick={() => fetchCourses(totalPages, searchQuery)}
+                    title="Ke Halaman Terakhir"
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-sm block">keyboard_double_arrow_right</span>
+                  </button>
+
                 </div>
               )}
             </>
           )}
           
-          <footer className="mt-2 border-t border-slate-200 dark:border-slate-800 pt-4 text-center text-sm font-medium text-slate-500 dark:text-slate-400">
+          <br/>
+
+        <footer className="flex justify-center gap-6 pt-2">
+          <p className="text-xs text-[#666685] font-medium">
             &copy; {currentYear} InstructorHub - PT Jago Inovasi Bisnis.
-          </footer>
+          </p>
+        </footer>
 
         </div>
       </main>

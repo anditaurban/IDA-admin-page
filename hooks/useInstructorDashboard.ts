@@ -128,68 +128,43 @@ export function useInstructorDashboard() {
       setIsLoading(true);
 
       try {
-        if (!BASE_URL || !activeOwnerId) throw new Error('ENV_OR_OWNER_ID_MISSING');
-
-        const userParam = activeUserId ? `&user_id=${activeUserId}` : '';
-        const activeToken = getActiveToken();
-        const headers: HeadersInit = { Accept: 'application/json', 'Content-Type': 'application/json' };
-        if (activeToken) headers.Authorization = `Bearer ${activeToken}`;
-
-        // 🛠️ FUNGSI BANTUAN PENGAMBIL DATA PER HALAMAN
-        const fetchPageFromBackend = async (pageNumber: number) => {
-          const endpoint = search
-            ? `${BASE_URL}/table/course/${activeOwnerId}/${pageNumber}?search=${encodeURIComponent(search)}${userParam}`
-            : `${BASE_URL}/table/course/${activeOwnerId}/${pageNumber}?${userParam}`;
-          
-          const response = await fetch(endpoint, { method: 'GET', headers });
-          if (!response.ok) {
-            if (response.status === 401 || response.status === 403) throw new Error('UNAUTHORIZED');
-            return { tableData: [], totalPages: 1 }; // Return kosong jika error 404/500 dll
-          }
-          return await response.json();
-        };
-
-        // ✨ 1. AMBIL HALAMAN PERTAMA (Untuk mengecek ada berapa total halaman di Backend)
-        const firstData = await fetchPageFromBackend(1);
-        let allRawData = Array.isArray(firstData.tableData) ? [...firstData.tableData] : [];
-        const backendTotalPages = firstData.totalPages || 1;
-
-        // ✨ 2. JURUS SAPU JAGAT: Jika backend memecah data ke beberapa halaman, sedot semuanya!
-        if (backendTotalPages > 1) {
-          const promises = [];
-          // Kita loop mulai dari halaman 2 sampai halaman terakhir milik backend
-          for (let i = 2; i <= backendTotalPages; i++) {
-            promises.push(fetchPageFromBackend(i));
-          }
-          // Eksekusi secara bersamaan (Parallel) agar super cepat
-          const results = await Promise.all(promises);
-          results.forEach(res => {
-            if (Array.isArray(res.tableData)) {
-              allRawData = [...allRawData, ...res.tableData]; // Gabungkan semua kelas!
-            }
-          });
+        // ✨ FIX: Validasi yang lebih elegan (Jangan gunakan throw)
+        if (!BASE_URL) {
+          console.error('API Base URL belum disetting di environment (.env)');
+          return; // Keluar dari fungsi diam-diam tanpa merusak aplikasi
         }
 
-        // ✨ 3. SARING DATA KITA (Sekarang kita punya akses ke 100% database)
-        const myCourses = activeUserId
-          ? allRawData.filter((item: ApiCourseItem) => String(item.user_id) === activeUserId)
-          : allRawData;
+        if (!activeUserId) {
 
-        // ✨ 4. PAGINASI LOKAL (Kita atur 10 Course per Halaman)
-        const itemsPerPage = 10;
-        const finalTotalItems = myCourses.length; // Ini PASTI menemukan 12/13 kelas Anda!
-        const finalTotalPages = Math.ceil(finalTotalItems / itemsPerPage) || 1;
+          return; 
+        }
 
-        // Sabuk Pengaman Paginasi: Mencegah user nyasar ke halaman yang kosong
-        const safePage = page > finalTotalPages ? finalTotalPages : (page < 1 ? 1 : page);
+        const activeToken = getActiveToken();
+        const headers: HeadersInit = { Accept: 'application/json', 'Content-Type': 'application/json' };
 
-        // Potong array data khusus untuk halaman yang sedang dibuka
-        const startIndex = (safePage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        const paginatedCourses = myCourses.slice(startIndex, endIndex);
+        if (activeToken) headers.Authorization = `Bearer ${activeToken}`;
 
-        // ✨ 5. FORMAT DATA UNTUK DITAMPILKAN
-        const formattedData: CourseItem[] = paginatedCourses.map((item: ApiCourseItem) => {
+        const limitParam = 'limit=12&per_page=12'; 
+
+        // ✨ 1. URL BARU: Langsung tembak ke <<baseUrl>>/table/course/<<userId>>/<<currentPage>>
+        const endpoint = search
+          ? `${BASE_URL}/table/course/${activeUserId}/${page}?search=${encodeURIComponent(search)}&${limitParam}`
+          : `${BASE_URL}/table/course/${activeUserId}/${page}?${limitParam}`;
+
+        const response = await fetch(endpoint, { method: 'GET', headers });
+
+        if (response.status === 401 || response.status === 403) {
+          showToast('error', 'Sesi login Anda telah berakhir.');
+          performLogout();
+          return;
+        }
+        if (!response.ok) throw new Error(`API_ERROR: HTTP ${response.status}`);
+
+        const data = await response.json();
+        const rawTableData = Array.isArray(data.tableData) ? data.tableData : [];
+
+        // ✨ 2. FORMAT DATA (Langsung proses, tanpa perlu di-filter lagi karena backend sudah pintar)
+        const formattedData: CourseItem[] = rawTableData.map((item: ApiCourseItem) => {
           let displayThumb = item.thumbnail || '';
           
           if (displayThumb) {
@@ -216,18 +191,13 @@ export function useInstructorDashboard() {
           };
         });
 
-        // ✨ 6. SIMPAN SEMUA KONDISI KE STATE
+        // ✨ 3. SINKRONISASI KE STATE (Langsung comot dari JSON Backend)
         setCourses(formattedData);
-        setTotalItems(finalTotalItems); // Pasti Akurat! (misal: 13)
-        setTotalPages(finalTotalPages); // Pasti Akurat! (misal: 2)
-        setCurrentPage(safePage);
+        setTotalItems(data.totalRecords || 0); // Otomatis dapat angka 12, 8, dsb
+        setTotalPages(data.totalPages || 1);   // Otomatis dapat jumlah halamannya
+        setCurrentPage(data.currentPage || page); // Pastikan halaman sinkron
 
-      } catch (error: unknown) {
-        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-          showToast('error', 'Sesi login Anda telah berakhir.');
-          performLogout();
-          return;
-        }
+      } catch (error) {
         console.error('Gagal memuat data kelas:', error);
         setCourses([]);
         setTotalPages(1);
@@ -237,7 +207,8 @@ export function useInstructorDashboard() {
         setIsLoading(false);
       }
     },
-    [BASE_URL, activeOwnerId, activeUserId, getActiveToken, isAuthChecking, performLogout, showToast]
+    // Pastikan activeUserId ada di dalam array dependency ini
+    [BASE_URL, activeUserId, getActiveToken, isAuthChecking, performLogout, showToast] 
   );
 
   useEffect(() => {
