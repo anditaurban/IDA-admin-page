@@ -1,18 +1,29 @@
-'use client';
+"use client";
 
-import React, { useRef } from 'react';
-import { DM_Sans } from 'next/font/google';
-import type { BasicCourseData } from '@/hooks/useCourseEditor';
-import type { CourseCategory } from '@/hooks/useCourseCategories';
-import type { DiscountMode } from '@/utils/coursePricing';
-import { calculateTotalPrice, formatRibuan, normalizeNumberString } from '@/utils/coursePricing';
+import React, { useRef, useState } from "react";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+import { DM_Sans } from "next/font/google";
+import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
+import { useToast } from "@/components/ui/ToastProvider"; // Sesuaikan path jika berbeda
+
+import type { BasicCourseData } from "@/hooks/useCourseEditor";
+import type { CourseCategory } from "@/hooks/useCourseCategories";
+import type { DiscountMode } from "@/utils/coursePricing";
+
+import {
+  calculateTotalPrice,
+  formatRibuan,
+  normalizeNumberString,
+} from "@/utils/coursePricing";
 
 const googleSansAlt = DM_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '700', '800'],
+  subsets: ["latin"],
+  weight: ["400", "500", "700", "800"],
 });
 
 type CourseBasicEditorProps = {
+  courseSlug: string; // ✨ PASTIKAN BARIS INI ADA
   basicData: BasicCourseData;
   categories: CourseCategory[];
   levels: string[];
@@ -21,16 +32,24 @@ type CourseBasicEditorProps = {
   isLevelLoading: boolean;
   isUploadingThumbnail: boolean;
   discountMode: DiscountMode;
-  isEditing: boolean; // ✨ PROP BARU
-  onEditToggle: () => void;      // ✨ PROP BARU
-  onCancelToggle: () => void;    // ✨ PROP BARU
-  onChange: (field: keyof BasicCourseData, value: string | boolean | number) => void;
+  isEditing: boolean;
+  onEditToggle: () => void;
+  onCancelToggle: () => void;
+  onChange: (
+    field: keyof BasicCourseData,
+    value: string | boolean | number,
+  ) => void;
   onDiscountModeChange: (mode: DiscountMode) => void;
   onThumbnailUpload: (file: File) => void;
   onFileError: (message: string) => void;
 };
 
+// ✨ JURUS PENYELAMAT MEMORI PREVIEW ✨
+// Letakkan ini DI LUAR fungsi agar tidak ikut ke-reset!
+let globalSavedPreview: string | null = null;
+
 export default function CourseBasicEditor({
+  courseSlug,
   basicData,
   categories,
   levels,
@@ -47,300 +66,682 @@ export default function CourseBasicEditor({
   onThumbnailUpload,
   onFileError,
 }: CourseBasicEditorProps) {
+  // ✨ STATE UNTUK FITUR DELETE KELAS
+  const router = useRouter();
+  const { showToast } = useToast();
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
-  const displayThumbnail = React.useMemo(() => {
-    const rawBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || '';
-    const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
-    
-    // ✨ FIX: Gunakan const karena nilainya tidak ditimpa lagi
-    const thumb = basicData.thumbnail;
-    
-    if (!thumb) return '';
-    
-    if (thumb.startsWith('data:') || thumb.startsWith('bg-')) return thumb;
+  // ✨ State untuk menampung gambar preview instan
+  const [localPreview, setLocalPreview] = React.useState<string | null>(
+    globalSavedPreview,
+  );
 
-    if (thumb.includes('/uploads/courses/')) {
-      const filename = thumb.split('/').pop(); 
-      return `${baseUrl}/thumbnail/course/${filename}`;
+  // ✨ FUNGSI UNTUK MENGHAPUS KELAS
+  const handleConfirmDelete = async () => {
+    if (!courseSlug) {
+      showToast("error", "ID Kelas tidak ditemukan.");
+      return;
     }
-    
-    if (thumb.startsWith('http')) return thumb;
 
-    return `${baseUrl}/thumbnail/course/${thumb}`;
-    
+    setIsDeleting(true);
+    try {
+      const rawBaseUrl =
+        process.env.NEXT_PUBLIC_API_BASE_URL ||
+        process.env.NEXT_PUBLIC_API_URL ||
+        "";
+      const BASE_URL = rawBaseUrl.endsWith("/")
+        ? rawBaseUrl.slice(0, -1)
+        : rawBaseUrl;
+      const token =
+        Cookies.get("api_token") || process.env.NEXT_PUBLIC_API_TOKEN;
+
+      // Sesuaikan URL dan method API backend Anda.
+      // (Di API sebelumnya menggunakan PUT, tapi seringkali API delete menggunakan DELETE atau PUT)
+      const response = await fetch(`${BASE_URL}/delete/course/${courseSlug}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error("Gagal menghapus kelas");
+
+      showToast("success", "Kelas berhasil dihapus permanen.");
+
+      // Lempar kembali ke dashboard instruktur setelah berhasil dihapus
+      router.push("/instructor/dashboard"); // Sesuaikan rute beranda Anda
+    } catch (error) {
+      console.error(error);
+      showToast("error", "Gagal menghapus kelas. Silakan coba lagi.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // 1. Logika Penentuan URL Gambar Dasar (Sama persis seperti CourseCard)
+  const displayThumbnail = React.useMemo(() => {
+    const rawBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "";
+    let baseUrl = rawBaseUrl.replace(/\/+$/, ""); 
+
+    // Potong '/api' agar murni mengambil root domain
+    if (baseUrl.endsWith("/api")) {
+      baseUrl = baseUrl.slice(0, -4);
+    }
+
+    // Gunakan basicData.thumbnail dari hook Anda
+    const thumb = basicData.thumbnail;
+
+    if (!thumb) return "";
+    if (thumb.startsWith("data:") || thumb.startsWith("bg-") || thumb.startsWith("http")) {
+      return thumb;
+    }
+
+    const filename = thumb.split("/").pop();
+    return `${baseUrl}/thumbnail/course/${filename}`;
   }, [basicData.thumbnail]);
 
-  const isImageThumbnail = displayThumbnail.startsWith('http') || displayThumbnail.startsWith('data:image') || displayThumbnail.startsWith('/');
-  const isCssThumbnail = displayThumbnail.startsWith('bg-');
+  const isCssThumbnail = displayThumbnail.startsWith("bg-");
+  const isImageThumbnail = displayThumbnail.length > 0 && !isCssThumbnail;
+
+  // 2. State untuk menampung Blob (Gambar Aman)
+  const [secureImageUrl, setSecureImageUrl] = React.useState<string>("");
+
+  // 3. Effect Pengambil Gambar Menggunakan Token
+  React.useEffect(() => {
+    const fetchSecureImage = async () => {
+      if (!displayThumbnail || isCssThumbnail || displayThumbnail.startsWith("data:")) {
+        setSecureImageUrl(displayThumbnail);
+        return;
+      }
+
+      try {
+        // Ambil token (sesuaikan dengan cara Editor mendapatkan token, misal getActiveToken() atau Cookies)
+        const token = Cookies.get("api_token") || process.env.NEXT_PUBLIC_API_TOKEN;
+
+        const response = await fetch(displayThumbnail, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          setSecureImageUrl(objectUrl);
+        } else {
+          setSecureImageUrl(displayThumbnail);
+        }
+      } catch (error) {
+        console.error("Gagal meload gambar aman di Editor", error);
+        setSecureImageUrl(displayThumbnail);
+      }
+    };
+
+    fetchSecureImage();
+  }, [displayThumbnail, isCssThumbnail]);
 
   const parsedPrice = Number(normalizeNumberString(basicData.price)) || 0;
-  const parsedDiscount = Number(normalizeNumberString(basicData.discount)) || 0;
-  const finalPrice = Number(basicData.total_price || calculateTotalPrice(basicData.price, discountMode, basicData.discount)) || 0;
+  
+  type ExtendedData = BasicCourseData & {
+    discount_percent?: string | number;
+    discount_nominal?: string | number;
+    total_price?: string | number;
+    discount?: string | number;
+  };
+  const safeData = basicData as ExtendedData;
+
+  const apiPercent = Number(safeData.discount_percent) || 0;
+  const apiNominal = Number(safeData.discount_nominal) || 0;
+  const genericDiscount = Number(normalizeNumberString(String(safeData.discount || 0)));
+
+  const displayPercent = apiPercent > 0 ? apiPercent : (discountMode === "percent" ? genericDiscount : 0);
+  const displayNominal = apiNominal > 0 ? apiNominal : (discountMode === "nominal" ? genericDiscount : 0);
+
+  const currentEditDiscount = discountMode === "percent" 
+    ? String(displayPercent) 
+    : String(displayNominal);
+
+  // ✨ FIX 1: Tentukan mode kalkulasi berdasarkan apakah sedang Edit atau Tampil
+  const currentModeForCalc = isEditing ? discountMode : (displayPercent > 0 ? "percent" : "nominal");
+  const currentValueForCalc = isEditing ? currentEditDiscount : String(displayPercent > 0 ? displayPercent : displayNominal);
+
+  // ✨ FIX 2: Paksa kalkulasi real-time (Mengabaikan total_price lama dari API)
+  const calculatedFinal = calculateTotalPrice(
+    basicData.price, 
+    currentModeForCalc, 
+    currentValueForCalc
+  );
+  // Jika hasil kalkulasi 0 atau gagal, kembalikan ke harga normal
+  const finalPrice = calculatedFinal > 0 ? calculatedFinal : parsedPrice;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
     if (!allowedTypes.includes(file.type)) {
-      onFileError('Format file tidak didukung. Harap pilih gambar JPG, PNG, atau WEBP.');
-      e.target.value = '';
+      onFileError(
+        "Format file tidak didukung. Harap pilih gambar JPG, PNG, atau WEBP.",
+      );
+      e.target.value = "";
       return;
     }
 
     const MAX_SIZE_MB = 2;
     if (file.size > MAX_SIZE_MB * 1024 * 1024) {
       onFileError(`Ukuran gambar terlalu besar! Maksimal ${MAX_SIZE_MB}MB.`);
-      e.target.value = '';
+      e.target.value = "";
       return;
     }
 
+    const objectUrl = URL.createObjectURL(file);
+
+    globalSavedPreview = objectUrl;
+    setLocalPreview(objectUrl);
+
     onThumbnailUpload(file);
-    e.target.value = '';
+    e.target.value = "";
   };
 
+  // ✨ FUNGSI AJAIB: Mengubah nama file mentah menjadi URL utuh
+  const getValidThumbnailUrl = (thumbString: string) => {
+    if (!thumbString) return ''; // Jika belum ada gambar
+    
+    // Jika formatnya sudah link utuh (Blob lokal dari komputer, base64, atau URL eksternal)
+    if (thumbString.startsWith('http') || thumbString.startsWith('data:') || thumbString.startsWith('blob:')) {
+      return thumbString;
+    }
+    
+    // Jika isinya cuma nama file dari backend (karena update endpoint headteam Anda)
+    // Kita rakit menjadi URL lengkap sesuai endpoint baru
+    const filename = thumbString.split('/').pop();
+    return `${BASE_URL}/thumbnail/course/${filename}`;
+  };
+
+  console.log("1. Data mentah dari backend:", displayThumbnail);
+  console.log("2. Hasil URL rakitan:", getValidThumbnailUrl(displayThumbnail));
+
   return (
-    <div className={`p-8 rounded-4xl border flex flex-col lg:flex-row gap-10 mb-10 transition-all duration-500 ${isEditing ? 'bg-white dark:bg-[#111111] border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)]' : 'bg-transparent border-transparent'}`}>
-      
-      {/* KIRI: THUMBNAIL */}
-      <div className="w-full lg:w-85 shrink-0">
-        {isEditing && (
-          <div className="flex items-center justify-between mb-3 animate-in fade-in">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Thumbnail Image (Maks 2MB)</label>
-          </div>
-        )}
-
-        <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp" className="hidden" ref={thumbnailInputRef} onChange={handleFileChange} />
-
-        <div
-          className={`group relative w-full aspect-4/3 rounded-3xl overflow-hidden shadow-sm bg-slate-100 dark:bg-slate-900 transition-all duration-300 ${
-            isFetching || isUploadingThumbnail ? 'animate-pulse pointer-events-none' : ''
-          } ${isEditing ? 'border border-slate-200 dark:border-slate-800 cursor-pointer hover:shadow-md' : 'border-0 pointer-events-none'}`}
-          onClick={() => isEditing && thumbnailInputRef.current?.click()}
-        >
-          {isUploadingThumbnail && (
-            <div className="absolute z-20 inset-0 bg-white/80 dark:bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-[#00BCD4]">
-              <span className="material-symbols-outlined text-4xl animate-spin mb-2">sync</span>
-              <span className="text-xs font-bold uppercase tracking-wider">Mengunggah...</span>
-            </div>
-          )}
-
-          {displayThumbnail ? (
-            <div className={`absolute inset-0 bg-cover bg-center transition-transform duration-700 ${isEditing && 'group-hover:scale-105'} ${isCssThumbnail ? displayThumbnail : ''}`} style={isImageThumbnail ? { backgroundImage: `url(${displayThumbnail})` } : {}} />
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700">
-              <span className="material-symbols-outlined text-5xl mb-2">add_photo_alternate</span>
-              <span className="text-xs font-medium">Belum Ada Thumbnail</span>
-            </div>
-          )}
-
-          {/* Overlay Hover HANYA MUNCUL JIKA EDITING */}
+    <>
+      <div
+        className={`p-8 rounded-4xl border flex flex-col lg:flex-row gap-10 mb-8 transition-all duration-500 ${isEditing ? "bg-white dark:bg-[#111111] border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)]" : "bg-transparent border-transparent"}`}
+      >
+        {/* KIRI: THUMBNAIL */}
+        <div className="w-full lg:w-85 shrink-0">
           {isEditing && (
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors duration-300 flex flex-col items-center justify-center">
-              <div className="translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center gap-3">
-                <div className="size-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/30 shadow-xl">
-                  <span className="material-symbols-outlined text-[24px]">cloud_upload</span>
-                </div>
-                <p className="font-bold text-xs text-white drop-shadow-md">Update Thumbnail</p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* KANAN: FORM & INFORMASI KELAS */}
-      <div className="flex-1 flex flex-col">
-        
-        {/* Judul Kelas */}
-        <div className="mb-4 relative group">
-          {isEditing && <label className="text-[11px] font-bold text-[#00BCD4] uppercase tracking-wider flex items-center gap-2 mb-2 opacity-80 animate-in fade-in">Judul Utama Kelas</label>}
-          {isEditing ? (
-            <textarea
-              value={basicData.title}
-              onChange={(e) => onChange('title', e.target.value)}
-              rows={2}
-              disabled={isFetching}
-              className={`w-full bg-transparent border-0 p-0 text-3xl sm:text-4xl lg:text-[40px] font-extrabold text-slate-900 dark:text-white focus:ring-0 resize-none outline-none leading-[1.1] transition-all placeholder:text-slate-300 dark:placeholder:text-slate-700 disabled:opacity-50 ${googleSansAlt.className}`}
-              placeholder="Ketik judul kelas di sini..."
-            />
-          ) : (
-            <h2 className={`text-3xl sm:text-4xl lg:text-[40px] font-extrabold text-slate-900 dark:text-white leading-[1.1] ${googleSansAlt.className}`}>
-              {basicData.title || <span className="text-slate-300">Judul belum diatur</span>}
-            </h2>
-          )}
-        </div>
-
-        {/* ✨ INFO BADGE & TOMBOL EDIT LOKAL */}
-        <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 ${isFetching ? 'opacity-50' : ''}`}>
-          
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
-              <span className="material-symbols-outlined text-[14px]">person</span>
-              {/* ✨ KODE BERSIH: Tanpa 'any' atau 'Record' */}
-              {basicData.author_name || basicData.author || 'Instruktur'}
-            </div>
-            
-            <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
-              <span className="material-symbols-outlined text-[14px]">group</span>
-              {basicData.students} Siswa
-            </div>
-          </div>
-
-          {/* ✨ LOCAL ACTION: Tombol Edit / Batal */}
-          <div className="animate-in fade-in zoom-in-95 duration-300">
-            {isEditing ? (
-              <button 
-                onClick={onCancelToggle} 
-                className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 rounded-xl text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all border border-rose-200 dark:border-rose-500/30 active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[16px]">close</span> Batal Edit
-              </button>
-            ) : (
-              <button 
-                onClick={onEditToggle} 
-                className="flex items-center gap-1.5 px-4 py-2 bg-cyan-50 dark:bg-cyan-500/10 text-[#00BCD4] rounded-xl text-xs font-bold hover:bg-[#00BCD4] hover:text-white transition-all border border-cyan-200 dark:border-cyan-500/30 active:scale-95 group"
-              >
-                <span className="material-symbols-outlined text-[16px] group-hover:rotate-12 transition-transform">edit</span> Edit Info Kelas
-              </button>
-            )}
-          </div>
-
-        </div>
-
-        {/* GRID ATAS: Meta Konfigurasi */}
-        <div className="mt-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
-          
-          {/* Kategori */}
-          <div className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? 'p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10' : 'p-2'}`}>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">category</span>
-              Kategori
-            </label>
-            {isEditing ? (
-              <select 
-                value={basicData.category_id || ''} 
-                onChange={(e) => onChange('category_id', e.target.value ? Number(e.target.value) : 1)} 
-                disabled={isFetching || isCategoryLoading} 
-                className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {categories.length > 0 ? categories.map((c) => <option key={c.category_id} value={c.category_id}>{c.category_name}</option>) : <option value="">Belum tersedia</option>}
-              </select>
-            ) : (
-              <span className="text-sm font-bold text-slate-900 dark:text-white">{basicData.category_name || 'Umum'}</span>
-            )}
-          </div>
-
-          {/* Tingkat */}
-          <div className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? 'p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10' : 'p-2'}`}>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">stairs</span>
-              Tingkat
-            </label>
-            {isEditing ? (
-              <select 
-                value={basicData.level} 
-                onChange={(e) => onChange('level', e.target.value)} 
-                disabled={isFetching || isLevelLoading} 
-                className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {levels.map((level) => <option key={level} value={level}>{level}</option>)}
-              </select>
-            ) : (
-              <span className="text-sm font-bold text-slate-900 dark:text-white">{basicData.level || 'Beginner'}</span>
-            )}
-          </div>
-
-          {/* Harga Dasar */}
-          <div className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? 'p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10' : 'p-2'}`}>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">payments</span>
-              Harga Dasar
-            </label>
-            {isEditing ? (
-              <div className="flex items-center">
-                <span className="text-sm font-bold text-slate-400 mr-1.5">Rp</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={!basicData.price || basicData.price === '0' ? '' : formatRibuan(basicData.price)}
-                  onChange={(e) => onChange('price', normalizeNumberString(e.target.value))}
-                  className="w-full bg-transparent border-0 p-0 text-sm font-bold outline-none focus:ring-0 placeholder:text-slate-300 text-slate-900 dark:text-white"
-                  placeholder="0"
-                />
-              </div>
-            ) : (
-              <span className="text-sm font-bold text-slate-900 dark:text-white">Rp {formatRibuan(parsedPrice)}</span>
-            )}
-          </div>
-        </div>
-
-        {/* BOKS BAWAH: Diskon & Harga Akhir */}
-        <div className="mt-4 flex flex-col md:flex-row gap-4">
-          
-          {/* Shape Diskon */}
-          <div className={`flex-1 flex flex-col sm:flex-row sm:items-center gap-3 transition-all duration-500 ${isEditing ? 'p-4 rounded-2xl bg-rose-50/50 dark:bg-rose-500/5 border border-rose-100 dark:border-rose-500/20' : 'px-2 py-4'}`}>
-            
-            <div className={`flex flex-col gap-2 ${isEditing ? 'sm:w-5/12' : ''}`}>
-              <label className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[14px]">loyalty</span>
-                {isEditing ? 'Atur Diskon' : 'Diskon Diterapkan'}
+            <div className="flex items-center justify-between mb-3 animate-in fade-in">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Thumbnail Image (Maks 2MB)
               </label>
-              
-              {isEditing && (
-                <div className="flex rounded-lg bg-white/70 dark:bg-[#111111] p-1 border border-rose-100 dark:border-rose-500/20 animate-in fade-in">
-                  <button type="button" onClick={() => onDiscountModeChange('percent')} className={`flex-1 rounded-md px-2 py-1 text-[10px] font-bold transition-all ${discountMode === 'percent' ? 'bg-rose-500 text-white' : 'text-rose-500 hover:bg-rose-100'}`}>Persen</button>
-                  <button type="button" onClick={() => onDiscountModeChange('nominal')} className={`flex-1 rounded-md px-2 py-1 text-[10px] font-bold transition-all ${discountMode === 'nominal' ? 'bg-rose-500 text-white' : 'text-rose-500 hover:bg-rose-100'}`}>Nominal</button>
+            </div>
+          )}
+
+          <input
+            type="file"
+            accept="image/png, image/jpeg, image/jpg, image/webp"
+            className="hidden"
+            ref={thumbnailInputRef}
+            onChange={handleFileChange}
+          />
+
+          {/* Kotak Gambar Thumbnail */}
+          <div
+            className={`group relative w-full aspect-4/3 rounded-3xl overflow-hidden shadow-sm bg-slate-100 dark:bg-slate-900 transition-all duration-300 ${
+              isFetching || isUploadingThumbnail
+                ? "animate-pulse pointer-events-none"
+                : ""
+            } ${isEditing ? "border border-slate-200 dark:border-slate-800 cursor-pointer hover:shadow-md" : "border-0 pointer-events-none"}`}
+            onClick={() => isEditing && thumbnailInputRef.current?.click()}
+          >
+            {isUploadingThumbnail && (
+              <div className="absolute z-20 inset-0 bg-white/80 dark:bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center text-[#00BCD4]">
+                <span className="material-symbols-outlined text-4xl animate-spin mb-2">
+                  sync
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider">
+                  Mengunggah...
+                </span>
+              </div>
+            )}
+
+            {displayThumbnail ? (
+              <div
+                className={`absolute inset-0 bg-cover bg-center transition-transform duration-700 ${isEditing && "group-hover:scale-105"}`}
+                style={{
+                  backgroundImage: localPreview
+                    ? `url('${localPreview}')`
+                    : isImageThumbnail && secureImageUrl
+                    ? `url('${secureImageUrl}')`
+                    : "none",
+                }}
+              />
+            ) : (
+              /* ✨ UX Baru: Placeholder Inisial Judul Kelas di Editor */
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 transition-all duration-500">
+                <span className={`text-6xl lg:text-7xl font-black text-slate-300 dark:text-slate-600/80 uppercase tracking-widest drop-shadow-sm transition-all ${googleSansAlt.className}`}>
+                  {basicData.title 
+                    ? (basicData.title.split(' ').length > 1 
+                        ? basicData.title.split(' ')[0][0] + basicData.title.split(' ')[1][0] 
+                        : basicData.title.substring(0, 2)).toUpperCase() 
+                    : 'C'}
+                </span>
+                
+                {/* Teks bantuan hanya muncul jika instruktur BUKAN dalam mode edit */}
+                {!isEditing && (
+                  <span className="absolute bottom-4 text-[10px] font-bold text-slate-400 dark:text-slate-500 tracking-widest uppercase bg-white/50 dark:bg-black/20 px-3 py-1 rounded-full backdrop-blur-sm">
+                    Belum Ada Thumbnail
+                  </span>
+                )}
+              </div>
+            )}
+
+            {isEditing && (
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors duration-300 flex flex-col items-center justify-center">
+                <div className="translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center gap-3">
+                  <div className="size-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/30 shadow-xl">
+                    <span className="material-symbols-outlined text-[24px]">
+                      cloud_upload
+                    </span>
+                  </div>
+                  <p className="font-bold text-xs text-white drop-shadow-md">
+                    Update Thumbnail
+                  </p>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ✨ TOMBOL HAPUS SIMPEL DI BAWAH GAMBAR ✨ */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsDeleteModalOpen(true);
+              setDeleteConfirmationText("");
+            }}
+            className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-red-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 dark:text-red-500/70 dark:hover:text-red-400 dark:hover:bg-red-500/10 dark:hover:border-red-900/30 rounded-xl transition-all"
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              delete
+            </span>
+            Hapus Kelas Permanen
+          </button>
+        </div>
+
+        {/* KANAN: FORM & INFORMASI KELAS */}
+        <div className="flex-1 flex flex-col">
+          <div className="mb-4 relative group">
+            {isEditing && (
+              <label className="text-[11px] font-bold text-[#00BCD4] uppercase tracking-wider flex items-center gap-2 mb-2 opacity-80 animate-in fade-in">
+                Judul Utama Kelas
+              </label>
+            )}
+            {isEditing ? (
+              <textarea
+                value={basicData.title}
+                onChange={(e) => onChange("title", e.target.value)}
+                rows={2}
+                disabled={isFetching}
+                className={`w-full bg-transparent border-0 p-0 text-3xl sm:text-4xl lg:text-[40px] font-extrabold text-slate-900 dark:text-white focus:ring-0 resize-none outline-none leading-[1.1] transition-all placeholder:text-slate-300 dark:placeholder:text-slate-700 disabled:opacity-50 ${googleSansAlt.className}`}
+                placeholder="Ketik judul kelas di sini..."
+              />
+            ) : (
+              <h2
+                className={`text-3xl sm:text-4xl lg:text-[40px] font-extrabold text-slate-900 dark:text-white leading-[1.1] ${googleSansAlt.className}`}
+              >
+                {basicData.title || (
+                  <span className="text-slate-300">Judul belum diatur</span>
+                )}
+              </h2>
+            )}
+          </div>
+
+          <div
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 ${isFetching ? "opacity-50" : ""}`}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                <span className="material-symbols-outlined text-[14px]">
+                  person
+                </span>
+                {basicData.author_name || basicData.author || "Instruktur"}
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                <span className="material-symbols-outlined text-[14px]">
+                  group
+                </span>
+                {basicData.students} Siswa
+              </div>
+            </div>
+
+            <div className="animate-in fade-in zoom-in-95 duration-300">
+              {isEditing ? (
+                <button
+                  onClick={onCancelToggle}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 rounded-xl text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all border border-rose-200 dark:border-rose-500/30 active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    close
+                  </span>{" "}
+                  Batal Edit
+                </button>
+              ) : (
+                <button
+                  onClick={onEditToggle}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-cyan-50 dark:bg-cyan-500/10 text-[#00BCD4] rounded-xl text-xs font-bold hover:bg-[#00BCD4] hover:text-white transition-all border border-cyan-200 dark:border-cyan-500/30 active:scale-95 group"
+                >
+                  <span className="material-symbols-outlined text-[16px] group-hover:rotate-12 transition-transform">
+                    edit
+                  </span>{" "}
+                  Edit Info Kelas
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div
+              className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-2"}`}
+            >
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]">
+                  category
+                </span>
+                Kategori
+              </label>
+              {isEditing ? (
+                <select
+                  value={basicData.category_id || ""}
+                  onChange={(e) =>
+                    onChange(
+                      "category_id",
+                      e.target.value ? Number(e.target.value) : 1,
+                    )
+                  }
+                  disabled={isFetching || isCategoryLoading}
+                  className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {categories.length > 0 ? (
+                    categories.map((c) => (
+                      <option key={c.category_id} value={c.category_id}>
+                        {c.category_name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Belum tersedia</option>
+                  )}
+                </select>
+              ) : (
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  {basicData.category_name || "Umum"}
+                </span>
               )}
             </div>
 
-            <div className={`relative flex items-center flex-1 transition-all ${isEditing ? 'bg-white/60 dark:bg-[#161616]/60 rounded-xl px-4 py-2 border border-rose-100 dark:border-rose-500/20' : ''}`}>
+            <div
+              className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-2"}`}
+            >
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]">
+                  stairs
+                </span>
+                Tingkat
+              </label>
               {isEditing ? (
-                <>
-                  {discountMode === 'nominal' && <span className="text-sm font-bold text-rose-500/50 mr-2">Rp</span>}
+                <select
+                  value={basicData.level}
+                  onChange={(e) => onChange("level", e.target.value)}
+                  disabled={isFetching || isLevelLoading}
+                  className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {levels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  {basicData.level || "Beginner"}
+                </span>
+              )}
+            </div>
+
+            <div
+              // ✨ FIX: Mengubah 'items-center' menjadi 'flex-col items-start justify-center gap-1.5'
+              className={`relative flex flex-col items-start justify-center flex-1 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-2"}`}
+            >
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]">
+                  payments
+                </span>
+                Harga Dasar
+              </label>
+              {isEditing ? (
+                <div className="flex items-center w-full mt-0.5">
+                  <span className="text-sm font-bold text-slate-400 mr-1.5">
+                    Rp
+                  </span>
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={!basicData.discount || basicData.discount === '0' ? '' : (discountMode === 'nominal' ? formatRibuan(basicData.discount) : basicData.discount)}
-                    onChange={(e) => {
-                      let val = normalizeNumberString(e.target.value);
-                      if (discountMode === 'percent' && Number(val) > 100) val = '100';
-                      onChange('discount', val);
-                    }}
-                    className={`w-full bg-transparent border-0 p-0 text-lg font-black text-rose-600 dark:text-rose-400 outline-none focus:ring-0 placeholder:text-rose-300 ${discountMode === 'percent' ? 'text-right' : 'text-left'}`}
+                    value={
+                      !basicData.price || basicData.price === "0"
+                        ? ""
+                        : formatRibuan(basicData.price)
+                    }
+                    onChange={(e) =>
+                      onChange("price", normalizeNumberString(e.target.value))
+                    }
+                    className="w-full bg-transparent border-0 p-0 text-sm font-bold outline-none focus:ring-0 placeholder:text-slate-300 text-slate-900 dark:text-white"
                     placeholder="0"
                   />
-                  {discountMode === 'percent' && <span className="text-lg font-bold text-rose-500/50 ml-2">%</span>}
-                </>
+                </div>
               ) : (
-                <span className="text-xl font-black text-rose-600 dark:text-rose-400">
-                  {/* ✨ KODE UPDATE: Mengganti 'Tidak ada diskon' menjadi '0' */}
-                  {parsedDiscount > 0 ? (discountMode === 'nominal' ? `Rp ${formatRibuan(parsedDiscount)}` : `${parsedDiscount}%`) : '0'}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Shape Harga Akhir */}
-          <div className={`md:w-[40%] flex flex-col justify-center rounded-2xl border px-5 py-4 transition-all duration-500 ${isEditing ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10' : 'border-transparent bg-transparent pl-2'}`}>
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-1.5">
-              Estimasi Harga Jual
-            </span>
-            <div className="flex flex-col">
-              {parsedPrice > 0 && finalPrice < parsedPrice && (
-                <span className="text-xs font-bold text-slate-400 line-through decoration-rose-500/40 decoration-2 mb-0.5">
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
                   Rp {formatRibuan(parsedPrice)}
                 </span>
               )}
-              <span className={`font-black text-emerald-700 dark:text-emerald-400 leading-none tracking-tight ${isEditing ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'}`}>
-                Rp {formatRibuan(finalPrice)}
-              </span>
             </div>
           </div>
 
+          {/* ================= MULAI BLOK DISKON & HARGA ================= */}
+          <div className="mt-4 flex flex-col md:flex-row gap-4">
+            {/* KOTAK KIRI: ATUR DISKON */}
+            <div
+              className={`flex-1 flex flex-col sm:flex-row sm:items-center gap-3 transition-all duration-500 ${isEditing ? "p-4 rounded-2xl bg-rose-50/50 dark:bg-rose-500/5 border border-rose-100 dark:border-rose-500/20" : "px-2 py-4"}`}
+            >
+              <div
+                className={`flex flex-col gap-2 ${isEditing ? "sm:w-5/12" : ""}`}
+              >
+                <label className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[14px]">
+                    loyalty
+                  </span>
+                  {isEditing ? "Atur Diskon" : "Diskon Diterapkan"}
+                </label>
+                {isEditing && (
+                  <div className="flex rounded-lg bg-white/70 dark:bg-[#111111] p-1 border border-rose-100 dark:border-rose-500/20 animate-in fade-in">
+                    <button
+                      type="button"
+                      onClick={() => onDiscountModeChange("percent")}
+                      className={`flex-1 rounded-md px-2 py-1 text-[10px] font-bold transition-all ${discountMode === "percent" ? "bg-rose-500 text-white" : "text-rose-500 hover:bg-rose-100"}`}
+                    >
+                      Persen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDiscountModeChange("nominal")}
+                      className={`flex-1 rounded-md px-2 py-1 text-[10px] font-bold transition-all ${discountMode === "nominal" ? "bg-rose-500 text-white" : "text-rose-500 hover:bg-rose-100"}`}
+                    >
+                      Nominal
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div
+                className={`relative flex items-center flex-1 transition-all ${isEditing ? "bg-white/60 dark:bg-[#161616]/60 rounded-xl px-4 py-2 border border-rose-100 dark:border-rose-500/20" : ""}`}
+              >
+                {isEditing ? (
+                  <>
+                    {discountMode === "nominal" && (
+                      <span className="text-sm font-bold text-rose-500/50 mr-2">
+                        Rp
+                      </span>
+                    )}
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={
+                        !currentEditDiscount || currentEditDiscount === "0"
+                          ? ""
+                          : discountMode === "nominal"
+                            ? formatRibuan(currentEditDiscount)
+                            : currentEditDiscount
+                      }
+                      onChange={(e) => {
+                        let val = normalizeNumberString(e.target.value);
+                        if (discountMode === "percent" && Number(val) > 100) val = "100";
+                        
+                        // Simpan ketikan instruktur ke field yang sesuai
+                        if (discountMode === "nominal") {
+                          onChange("discount_nominal", val);
+                        } else {
+                          onChange("discount_percent", val);
+                        }
+                      }}
+                      className={`w-full bg-transparent border-0 p-0 text-lg font-black text-rose-600 dark:text-rose-400 outline-none focus:ring-0 placeholder:text-rose-300 ${discountMode === "percent" ? "text-right" : "text-left"}`}
+                      placeholder="0"
+                    />
+                    {discountMode === "percent" && (
+                      <span className="text-lg font-bold text-rose-500/50 ml-2">
+                        %
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  // ✨ FIX: MODE TAMPIL SEKARANG BISA BACA NOMINAL
+                  <div className="flex items-center">
+                    {displayPercent > 0 || displayNominal > 0 ? (
+                      <div className="inline-flex items-center gap-1.5 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-md px-3 py-1.5 w-max shadow-sm">
+                        <span className="material-symbols-outlined text-[16px] text-rose-500">
+                          sell
+                        </span>
+                        <span className="text-xs font-bold text-rose-600 dark:text-rose-400 tracking-wide">
+                          {displayPercent > 0
+                            ? `${displayPercent}%`
+                            : `Rp ${formatRibuan(displayNominal)}`}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xl font-black text-slate-300 dark:text-slate-700">
+                        0
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* KOTAK KANAN: ESTIMASI HARGA JUAL */}
+            <div
+              className={`md:w-[40%] flex flex-col justify-center rounded-2xl border px-5 py-4 transition-all duration-500 ${isEditing ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10" : "border-transparent bg-transparent pl-2"}`}
+            >
+              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-1.5">
+                Estimasi Harga Jual
+              </span>
+              <div className="flex flex-col">
+                {parsedPrice > 0 && finalPrice < parsedPrice && (
+                  <span className="text-xs font-bold text-slate-400 line-through decoration-rose-500/40 decoration-2 mb-0.5">
+                    Rp {formatRibuan(parsedPrice)}
+                  </span>
+                )}
+                <span
+                  className={`font-black text-emerald-700 dark:text-emerald-400 leading-none tracking-tight ${isEditing ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"}`}
+                >
+                  Rp {formatRibuan(finalPrice)}
+                </span>
+              </div>
+            </div>
+          </div>
+          {/* ================= AKHIR BLOK DISKON & HARGA ================= */}
+
         </div>
       </div>
-    </div>
+
+      {/* =========================================
+          🛑 MODAL KONFIRMASI HAPUS 
+      ========================================= */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-999 flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#111111] rounded-4xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
+            <div className="p-6 sm:p-8">
+              <div className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 flex items-center justify-center mb-6 mx-auto">
+                <span className="material-symbols-outlined text-[32px] text-red-500">
+                  delete_forever
+                </span>
+              </div>
+
+              <h3 className="text-xl font-black text-slate-800 dark:text-white text-center mb-2">
+                Yakin Hapus Kelas?
+              </h3>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 text-center mb-6 leading-relaxed">
+                Ini adalah tindakan yang{" "}
+                <strong className="text-red-500 font-bold">sangat fatal</strong>
+                . Anda akan kehilangan seluruh materi kelas ini selamanya.
+              </p>
+
+              <div className="mb-8 bg-slate-50 dark:bg-[#0a0a0a] p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-2.5 uppercase tracking-wide">
+                  Ketik{" "}
+                  <span className="text-red-500 font-mono bg-red-100 dark:bg-red-500/20 px-2 py-0.5 rounded select-none">
+                    HAPUS
+                  </span>{" "}
+                  untuk konfirmasi:
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={deleteConfirmationText}
+                  onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                  className="w-full bg-white dark:bg-[#161616] border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-base font-bold text-slate-800 dark:text-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder:text-slate-300 dark:placeholder:text-slate-600"
+                  placeholder="Ketik HAPUS..."
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 py-3.5 rounded-xl font-bold text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteConfirmationText !== "HAPUS" || isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="flex-1 py-3.5 rounded-xl font-bold text-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-2 transition-all shadow-sm"
+                >
+                  {isDeleting ? (
+                    <span className="material-symbols-outlined text-[20px] animate-spin">
+                      sync
+                    </span>
+                  ) : (
+                    "Ya, Hapus"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
