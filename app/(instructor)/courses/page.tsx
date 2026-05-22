@@ -301,7 +301,16 @@ export default function AllCoursesPage() {
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={course.thumbnail} alt={course.title} className="w-full h-full object-cover" />
                           ) : (
-                            <span className="material-symbols-outlined absolute inset-0 m-auto text-slate-400">image</span>
+                            /* ✨ UX Baru: Placeholder Inisial Judul Kelas */
+                            <div className="absolute inset-0 flex items-center justify-center bg-linear-to-br from-[#00BCD4]/10 to-[#00BCD4]/30 dark:from-cyan-900/40 dark:to-cyan-800/40">
+                              <span className={`text-xl font-black text-[#00BCD4] dark:text-cyan-400 uppercase tracking-widest ${googleSansAlt.className}`}>
+                                {course.title 
+                                  ? (course.title.split(' ').length > 1 
+                                      ? course.title.split(' ')[0][0] + course.title.split(' ')[1][0] 
+                                      : course.title.substring(0, 2)).toUpperCase() 
+                                  : 'C'}
+                              </span>
+                            </div>
                           )}
                         </div>
                         <div className="flex-1">
