@@ -82,7 +82,7 @@ export default function MaterialsTab({ courseSlug }: { courseSlug?: string }) {
         <div className="relative z-10">
             <h3 className={`text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white mb-2 ${googleSansAlt.className}`}>Pusat Penulisan Modul</h3>
             <p className="text-sm text-slate-600 dark:text-slate-300 max-w-md leading-relaxed">
-              Pengaturan kurikulum (Daftar Bab, Teks, Video, dan Kuis) dipisahkan dari pengaturan dasar kelas agar Anda dapat fokus menulis tanpa gangguan. 
+              Pengaturan kurikulum (Daftar Bab, Teks, dan Video) dipisahkan dari pengaturan dasar kelas agar Anda dapat fokus menulis tanpa gangguan. 
             </p>
         </div>
         <Link 

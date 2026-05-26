@@ -12,7 +12,7 @@ type CourseTabNavigationProps = {
 const tabs = [
   { id: 'overview', label: 'Overview', icon: 'web' },
   { id: 'materials', label: 'Materials', icon: 'menu_book' },
-  { id: 'videos', label: 'Videos', icon: 'videocam' },
+  { id: 'videos', label: 'Live-Session', icon: 'videocam' },
   { id: 'assignments', label: 'Assignments', icon: 'task' },
   { id: 'reviews', label: 'Student Feedback', icon: 'reviews' },
 ] as const;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { DM_Sans } from 'next/font/google';
+import Cookies from 'js-cookie';
 import { useToast } from '@/components/ui/ToastProvider';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
@@ -7,13 +8,12 @@ const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'
 // --- API CONFIGURATION ---
 const RAW_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const BASE_URL = RAW_BASE_URL.endsWith('/') ? RAW_BASE_URL.slice(0, -1) : RAW_BASE_URL;
-const OWNER_ID = process.env.NEXT_PUBLIC_OWNER_ID || ''; 
-const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN || '';
 
 // --- INTERFACES ---
 interface ApiAssignment {
   assignment_id: number;
   owner_id: number;
+  course_id: number;
   customer_id: number;
   date: string;
   student: string;
@@ -46,7 +46,12 @@ interface UiStats {
   gradedCount: number;
 }
 
-export default function AssignmentsTab() {
+// ✨ FIX: Menambahkan props courseId agar data terfilter spesifik untuk kelas ini
+interface AssignmentsTabProps {
+  courseId: number | string;
+}
+
+export default function AssignmentsTab({ courseId }: AssignmentsTabProps) {
   const { showToast } = useToast();
 
   // --- STATES TABEL ---
@@ -82,39 +87,56 @@ export default function AssignmentsTab() {
   // LOGIC 1: BACKGROUND AGGREGATOR (MENGHITUNG STATISTIK AKURAT)
   // =====================================================================
   const calculateAccurateStats = useCallback(async () => {
+    // ✅ FIX 1: Matikan loading sebelum return jika courseId belum siap
+    if (!courseId) {
+      setIsStatsLoading(false);
+      return; 
+    }
+    
     setIsStatsLoading(true);
     try {
-      if (!BASE_URL || !OWNER_ID) return;
+      const token = Cookies.get("api_token") || process.env.NEXT_PUBLIC_API_TOKEN || "";
+      const headers: HeadersInit = { 
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}` 
+      };
 
-      const headers: HeadersInit = { 'Accept': 'application/json' };
-      if (API_TOKEN) headers['Authorization'] = `Bearer ${API_TOKEN}`;
+      const resPage1 = await fetch(`${BASE_URL}/table/course_assignment_review/${courseId}/1`, { method: 'GET', headers });
+      
+      // ✅ FIX 2: Jika response tidak OK (misal belum ada data), kembalikan stats ke 0, jangan biarkan gantung
+      if (!resPage1.ok) {
+        setGlobalStats({ totalRecords: 0, needsReviewCount: 0, gradedCount: 0 });
+        return; 
+      }
 
-      // 1. Ambil Halaman Pertama dulu untuk mengetahui Total Halaman
-      const resPage1 = await fetch(`${BASE_URL}/table/course_assignment_review/${OWNER_ID}/1`, { method: 'GET', headers });
-      if (!resPage1.ok) return;
       const dataPage1 = await resPage1.json();
       
       let allAssignments: ApiAssignment[] = [...(dataPage1.tableData || [])];
       const maxPages = dataPage1.totalPages || 1;
 
-      // 2. Jika halamannya lebih dari 1, fetch sisanya secara bersamaan (Parallel Fetch)
+      // ✅ FIX 3: Jika data kosong, langsung reset stat
+      if (allAssignments.length === 0) {
+        setGlobalStats({ totalRecords: 0, needsReviewCount: 0, gradedCount: 0 });
+        return;
+      }
+
+      // Opsional: Lanjut loop halaman jika data > 1 halaman
       if (maxPages > 1) {
         const promises = [];
         for (let i = 2; i <= maxPages; i++) {
           promises.push(
-            fetch(`${BASE_URL}/table/course_assignment_review/${OWNER_ID}/${i}`, { method: 'GET', headers })
-              .then(res => res.json())
+            fetch(`${BASE_URL}/table/course_assignment_review/${courseId}/${i}`, { method: 'GET', headers })
+              .then(res => res.ok ? res.json() : { tableData: [] }) // Tangani error per halaman
           );
         }
         const remainingPagesData = await Promise.all(promises);
         remainingPagesData.forEach(pageData => {
-          if (pageData.tableData) {
+          if (pageData?.tableData) {
             allAssignments = [...allAssignments, ...pageData.tableData];
           }
         });
       }
 
-      // 3. Sekarang kita punya 100% data di memori. Hitung dengan sempurna!
       const graded = allAssignments.filter(item => item.evaluation_score > 0).length;
       const needsReview = allAssignments.filter(item => item.evaluation_score === 0).length;
 
@@ -126,32 +148,49 @@ export default function AssignmentsTab() {
 
     } catch (error) {
       console.error("Error calculating global stats:", error);
+      setGlobalStats({ totalRecords: 0, needsReviewCount: 0, gradedCount: 0 });
     } finally {
+      // ✅ FIX 4: Proses Loading PASTI berhenti, tidak muter terus
       setIsStatsLoading(false);
     }
-  }, []);
+  }, [courseId]);
 
   // =====================================================================
   // LOGIC 2: FETCH DATA UNTUK TABEL (HANYA HALAMAN SAAT INI)
   // =====================================================================
   const fetchTableData = useCallback(async (page: number, search: string = '') => {
+    // ✅ FIX 5: Matikan loading tabel jika courseId kosong
+    if (!courseId) {
+       setIsTableLoading(false);
+       return;
+    }
+
     setIsTableLoading(true);
     try {
-      if (!BASE_URL || !OWNER_ID) throw new Error("ENV_MISSING");
+      const token = Cookies.get("api_token") || process.env.NEXT_PUBLIC_API_TOKEN || "";
+      
+      const queryParams = new URLSearchParams();
+      if (search) queryParams.append("search", search);
+      const queryString = queryParams.toString() ? `?${queryParams.toString()}` : "";
+      
+      const endpoint = `${BASE_URL}/table/course_assignment_review/${courseId}/${page}${queryString}`;
 
-      const endpoint = search 
-        ? `${BASE_URL}/table/course_assignment_review/${OWNER_ID}/${page}?search=${encodeURIComponent(search)}`
-        : `${BASE_URL}/table/course_assignment_review/${OWNER_ID}/${page}`;
-
-      const headers: HeadersInit = { 'Accept': 'application/json' };
-      if (API_TOKEN) headers['Authorization'] = `Bearer ${API_TOKEN}`;
+      const headers: HeadersInit = { 
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}` 
+      };
 
       const response = await fetch(endpoint, { method: 'GET', headers });
-      if (!response.ok) throw new Error(`API_ERROR`);
+      
+      // ✅ FIX 6: Handle error/kosong dengan mereset data UI, bukan melempar throw yang mematikan logic
+      if (!response.ok) {
+         setSubmissions([]);
+         setTotalPages(1);
+         return; 
+      }
       
       const data = await response.json();
       
-      // Mapping sesuai data dari backend Anda
       const formattedData: UiSubmission[] = data.tableData?.map((item: ApiAssignment) => ({
         id: String(item.assignment_id),
         studentName: item.student,
@@ -173,10 +212,12 @@ export default function AssignmentsTab() {
     } catch (error) {
       console.error("Error fetching table:", error);
       setSubmissions([]);
+      setTotalPages(1);
     } finally {
-      setIsTableLoading(false);
+      // ✅ FIX 7: Loading tabel PASTI berhenti
+      setIsTableLoading(false); 
     }
-  }, []);
+  }, [courseId]);
 
   // INIT DATA
   useEffect(() => {
@@ -205,10 +246,12 @@ export default function AssignmentsTab() {
     setIsSubmitting(true);
 
     try {
-      if (!BASE_URL) throw new Error('ENV_MISSING');
-
-      const headers: HeadersInit = { 'Accept': 'application/json', 'Content-Type': 'application/json' };
-      if (API_TOKEN) headers['Authorization'] = `Bearer ${API_TOKEN}`;
+      const token = Cookies.get("api_token") || process.env.NEXT_PUBLIC_API_TOKEN || "";
+      const headers: HeadersInit = { 
+        'Accept': 'application/json', 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}` 
+      };
 
       const response = await fetch(`${BASE_URL}/update/course_assignment_review/${selectedSubmission.id}`, {
         method: 'PUT',
@@ -223,9 +266,7 @@ export default function AssignmentsTab() {
       if (!response.ok) throw new Error(`API_ERROR`);
       const result = await response.json();
 
-      // Sesuai respon API Anda: {"data": {"success": true}}
       if (result.data?.success) {
-        
         // 1. Update tabel langsung tanpa refresh (Optimistic UI)
         setSubmissions(prev => prev.map(sub => 
           sub.id === selectedSubmission.id 
@@ -407,7 +448,7 @@ export default function AssignmentsTab() {
                                   <span className="font-bold block text-slate-900">{sub.studentName}</span>
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-[9px] font-extrabold bg-slate-200 px-1.5 py-0.5 rounded uppercase text-slate-600">ID: {sub.id}</span>
-                                    <span className="text-[10px] text-slate-400 font-medium">{sub.date !== "00/00/0000" ? sub.date : "Baru Saja"}</span>
+                                    <span className="text-[10px] text-slate-400 font-medium">{sub.date !== "00/00/0000" && sub.date !== "0000-00-00" ? sub.date : "Baru Saja"}</span>
                                   </div>
                                 </div>
                               </div>

@@ -26,30 +26,24 @@ export default function DocumentWorkspace({
   const [localTitle, setLocalTitle] = useState(title);
   const [docUrl, setDocUrl] = useState(initialUrl);
   const [description, setDescription] = useState(initialDescription);
-  const [localFile, setLocalFile] = useState<{ name: string; type: string } | null>(null);
   
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
-  // ✨ FIX TERBAIK: Derived State during Render (Standar React 18+)
-  // Menggantikan useEffect untuk menyinkronkan data props tanpa double-render/error ESLint
   const [prevProps, setPrevProps] = useState({ title, initialUrl, initialDescription });
   if (
-     title !== prevProps.title || 
-     initialUrl !== prevProps.initialUrl || 
-     initialDescription !== prevProps.initialDescription
+      title !== prevProps.title || 
+      initialUrl !== prevProps.initialUrl || 
+      initialDescription !== prevProps.initialDescription
   ) {
-     setPrevProps({ title, initialUrl, initialDescription });
-     setLocalTitle(title);
-     setDocUrl(initialUrl);
-     setDescription(initialDescription);
-     setLocalFile(null); 
-     setIsDirty(false);
+      setPrevProps({ title, initialUrl, initialDescription });
+      setLocalTitle(title);
+      setDocUrl(initialUrl);
+      setDescription(initialDescription);
+      setIsDirty(false);
   }
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
   const descTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -77,54 +71,33 @@ export default function DocumentWorkspace({
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value;
     
+    // Auto-format Google Docs/Slides
     const docsMatch = val.match(/docs\.google\.com\/(document|presentation|spreadsheets)\/d\/([a-zA-Z0-9_-]+)/);
     if (docsMatch) {
         val = `https://docs.google.com/${docsMatch[1]}/d/${docsMatch[2]}/embed`;
     } 
     else {
+        // Auto-format Google Drive PDF/Files
         const driveMatch = val.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
         if (driveMatch && !val.includes('/preview')) {
             val = `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
         }
     }
     
+    // Auto-format YouTube
     const ytMatch = val.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
     if (ytMatch && !val.includes('/embed/')) {
         val = `https://www.youtube.com/embed/${ytMatch[1]}`;
     }
 
+    // Auto-format direct document links (fallback)
     const isDirectFile = val.match(/\.(pdf|ppt|pptx)$/i);
     if (isDirectFile && val.startsWith('http') && !val.includes('google.com') && !val.includes('docs.google.com/gview')) {
         val = `https://docs.google.com/gview?url=${encodeURIComponent(val)}&embedded=true`;
     }
     
     setDocUrl(val);
-    setLocalFile(null); 
     setIsDirty(true);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-        setIsUploading(true);
-        setLocalFile({ name: file.name, type: file.type || '' });
-        
-        setTimeout(() => {
-            let objectUrl = URL.createObjectURL(file);
-            
-            if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-                objectUrl = `${objectUrl}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`;
-                setDocUrl(objectUrl); 
-            } 
-            else {
-                setDocUrl(""); 
-            }
-
-            setIsDirty(true);
-            setIsUploading(false);
-        }, 1500);
-    }
-    if (e.target) e.target.value = '';
   };
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -218,19 +191,10 @@ export default function DocumentWorkspace({
 
       <div className="bg-white dark:bg-[#111111] p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-6">
          <div className="space-y-3">
-           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-             <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block">
-               {isVideo ? "URL Video (YouTube, Vimeo, dll)" : "URL Dokumen / Upload File"}
-             </label>
-             
-             {!isVideo && (
-               <button onClick={() => fileInputRef.current?.click()} className={`text-xs font-bold hover:bg-opacity-20 border px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm w-full sm:w-auto active:scale-95 bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50`}>
-                  <span className="material-symbols-outlined text-[16px]">upload_file</span> Unggah PDF
-               </button>
-             )}
-             <input type="file" accept=".pdf,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-           </div>
-
+           <label className="text-sm font-bold text-slate-700 dark:text-slate-300 block">
+             {isVideo ? "URL Video (YouTube, Vimeo, dll)" : "URL Dokumen (Google Drive, Docs, Slides)"}
+           </label>
+           
            <div className="flex relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400">link</span>
               <input type="text" value={docUrl} onChange={handleUrlChange} placeholder={isVideo ? "Paste link YouTube di sini..." : "Paste link Google Drive di sini..."} className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl pl-12 pr-4 py-4 text-sm font-medium focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all dark:text-white" />
@@ -241,42 +205,23 @@ export default function DocumentWorkspace({
               <p className="text-[11px] text-slate-600 dark:text-slate-300">
                 {isVideo 
                   ? <span>Sistem akan otomatis mengubah link YouTube Anda menjadi format <strong>embed</strong> agar dapat diputar langsung oleh siswa.</span>
-                  : <span>Jika menggunakan Google Drive/Docs, pastikan hak akses link diatur ke <strong>&quot;Siapa saja yang memiliki tautan&quot; (Anyone with the link)</strong>. Sistem otomatis mengubahnya menjadi mode presentasi menyeluruh.</span>
+                  : <span>Pastikan hak akses link Google Drive Anda diatur ke <strong>&quot;Siapa saja yang memiliki tautan&quot; (Anyone with the link)</strong> agar siswa dapat melihat dokumen tanpa perlu request access.</span>
                 }
               </p>
            </div>
          </div>
          
-         {isUploading ? (
-            <div className="relative w-full aspect-video bg-slate-50 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-slate-500">
-               <span className={`size-10 border-4 border-slate-200 border-t-${isVideo ? 'blue' : 'emerald'}-500 rounded-full animate-spin mb-3`}></span>
-               <p className="font-bold text-sm">Mengunggah Dokumen...</p>
-            </div>
-         ) : localFile && localFile.name.match(/\.(ppt|pptx)$/i) ? (
-            <div className="relative w-full aspect-4/3 md:aspect-16/10 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg flex items-center justify-center animate-in fade-in zoom-in-95 duration-500">
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-700 text-center max-w-sm">
-                    <div className="text-6xl mb-4">📊</div>
-                    <h2 className="text-slate-900 dark:text-white font-bold text-xl mb-2">File Terpilih</h2>
-                    <p className="text-emerald-600 dark:text-emerald-400 font-medium text-sm mb-4 bg-emerald-50 dark:bg-emerald-900/20 py-2 px-3 rounded-lg truncate">
-                       {localFile.name}
-                    </p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                       File presentasi tidak dapat ditinjau langsung dari komputer Anda. <br/><br/>
-                       Silakan klik tombol <strong className="text-slate-700 dark:text-slate-200">Simpan</strong>.
-                    </p>
-                </div>
-            </div>
-         ) : docUrl ? (
+         {docUrl ? (
             <div className="relative w-full aspect-4/3 md:aspect-16/10 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-lg animate-in fade-in zoom-in-95 duration-500">
                <iframe src={docUrl} className="absolute inset-0 w-full h-full bg-slate-100 dark:bg-slate-900" allowFullScreen></iframe>
             </div>
          ) : (
-            <div className="relative w-full aspect-video bg-slate-100 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 group hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" onClick={() => !isVideo && fileInputRef.current?.click()}>
-               <span className={`material-symbols-outlined text-6xl mb-4 group-hover:scale-110 transition-transform ${isVideo ? 'group-hover:text-blue-500' : 'group-hover:text-emerald-500'}`}>
+            <div className="relative w-full aspect-video bg-slate-100 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 group hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+               <span className={`material-symbols-outlined text-6xl mb-4 transition-transform ${isVideo ? 'group-hover:text-blue-500' : 'group-hover:text-emerald-500'}`}>
                  {isVideo ? 'smart_display' : 'cloud_upload'}
                </span>
-               <p className="font-bold text-slate-600 dark:text-slate-300">Preview {isVideo ? 'video' : 'file'} akan muncul di sini</p>
-               <p className="text-xs mt-1 text-slate-400">{isVideo ? 'Paste link YouTube Anda di atas' : 'Paste link Google Drive atau klik untuk Upload Dokumen lokal'}</p>
+               <p className="font-bold text-slate-600 dark:text-slate-300">Preview {isVideo ? 'video' : 'dokumen'} akan muncul di sini</p>
+               <p className="text-xs mt-1 text-slate-400">{isVideo ? 'Paste link YouTube Anda di atas' : 'Paste link Google Drive Anda di atas'}</p>
             </div>
          )}
       </div>

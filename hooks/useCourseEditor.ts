@@ -147,10 +147,10 @@ function extractCoursePayload(resJson: unknown, courseSlug: string): ApiRecord |
 
 function normalizeCourseData(apiData: ApiRecord, courseSlug: string): BasicCourseData {
   const price = normalizeNumberString(apiData.price);
-  
+
   // PERBAIKAN: Baca dari key "discount" bawaan API
   const rawDiscount = Number(normalizeNumberString(apiData.discount));
-  
+
   // Logika Pintar: Kalau diskon > 100, pasti itu Rupiah (Nominal). Kalau <= 100, itu Persen.
   const discountMode: DiscountMode = rawDiscount > 100 ? 'nominal' : 'percent';
   const discountValue = String(rawDiscount);
@@ -232,7 +232,23 @@ export function useCourseEditor(params: {
       const token = getActiveToken();
       if (!token) throw new Error('Token API tidak tersedia.');
 
-      const response = await fetch(`${BASE_URL}/detail/course/${courseSlug}`, {
+      // 🎯 LANGKAH 1: Ambil ID Kelas terupdate langsung dari URL (?course=32)
+      const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const urlCourseId = searchParams ? searchParams.get('course') : null;
+      
+      // Prioritaskan ID dari URL, jika kosong baru gunakan courseSlug bawaan
+      const targetParam = urlCourseId || courseSlug;
+
+      if (!targetParam) return;
+
+      // Bilas state thumbnail sebelum fetch agar gambar kelas sebelumnya tidak nyangkut
+      setBasicData((prev) => ({
+        ...prev,
+        thumbnail: '', 
+      }));
+
+      // 🎯 LANGKAH 2: Tembak API menggunakan ID dinamis dari URL, bukan slug statis lagi!
+      const response = await fetch(`${BASE_URL}/detail/course/${targetParam}`, {
         method: 'GET',
         headers: buildJsonHeaders(token),
       });
@@ -242,29 +258,55 @@ export function useCourseEditor(params: {
         return;
       }
 
-      const result = await readApiResponse<unknown>(response);
+      const result = await readApiResponse<{ data?: { thumbnail?: string }; thumbnail?: string }>(response);
+      
+      // 🚨 BANTUAN DEBUG: Tampilkan isi JSON asli dari backend ke Console Browser
+      console.log(`🔥 JSON ASLI KELAS ${targetParam}:`, result);
 
       if (!response.ok) {
         throw new Error(`Gagal mengambil detail course (Status ${response.status})`);
       }
 
-      const apiData = extractCoursePayload(result, courseSlug);
+      const apiData = extractCoursePayload(result, targetParam);
 
       if (apiData) {
-
-        // PERBAIKAN TUGAS B: Validasi Kepemilikan Kelas
         if (currentOwnerId && apiData.owner_id && String(apiData.owner_id) !== String(currentOwnerId)) {
           showToast('error', 'Akses Ditolak: Anda tidak memiliki hak untuk mengedit kelas ini.');
-          setTimeout(() => {
-             window.location.href = '/'; // Alihkan kembali ke beranda
-          }, 2000);
+          setTimeout(() => { window.location.href = '/'; }, 2000);
           return;
         }
 
-        const freshData = normalizeCourseData(apiData, courseSlug);
-        setBasicData(freshData);
-        setInitialBasicData(freshData);
-        setDiscountMode(Number(freshData.discount_nominal || 0) > 0 ? 'nominal' : 'percent');
+        const freshData = normalizeCourseData(apiData, targetParam);
+        
+        // ✨ JURUS BYPASS TYPE-SAFE: Ekstrak gambar dengan cara yang disukai TypeScript
+        let rawThumbnailFromBackend = '';
+
+        // 1. Pastikan 'result' adalah sebuah objek, bukan sekadar string pesan error
+        if (typeof result === 'object' && result !== null) {
+          // Bungkus (Cast) dengan tipe yang kita harapkan
+          const resObj = result as { data?: { thumbnail?: string }; thumbnail?: string };
+          rawThumbnailFromBackend = resObj.data?.thumbnail || resObj.thumbnail || '';
+        }
+
+        // 2. Jika masih kosong, coba ekstrak dari apiData
+        if (!rawThumbnailFromBackend) {
+          rawThumbnailFromBackend = (apiData as { thumbnail?: string })?.thumbnail || '';
+        }
+
+        // ✨ INI BAGIAN YANG SEMPAT HILANG: Kita buat forcedFreshData-nya!
+        const forcedFreshData = {
+          ...freshData, // Menggunakan freshData agar ESLint tidak protes
+          course_id: Number(targetParam) || freshData.course_id,
+          thumbnail: rawThumbnailFromBackend // Paksa gunakan gambar langsung dari database
+        };
+
+        // 3. Masukkan data yang sudah sempurna ke dalam state
+        setBasicData(forcedFreshData);
+        setInitialBasicData(forcedFreshData);
+        setDiscountMode(Number(forcedFreshData.discount_nominal || 0) > 0 ? 'nominal' : 'percent');
+        
+        // (Opsional) Kosongkan local preview jika ada
+        // setLocalPreview('');
       }
     } catch (error) {
       console.error('Gagal mengambil detail course:', error);
@@ -274,9 +316,13 @@ export function useCourseEditor(params: {
     }
   }, [courseSlug, getActiveToken, onUnauthorized, showToast, currentOwnerId]);
 
+  // Trigger ulang fetch setiap kali string parameter URL berubah
+  const currentSearch = typeof window !== 'undefined' ? window.location.search : '';
+  
   useEffect(() => {
     fetchCourseDetail();
-  }, [fetchCourseDetail]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSearch]);
 
   const handleBasicChange = useCallback(
     (field: keyof BasicCourseData, value: string | boolean | number) => {
@@ -417,14 +463,14 @@ export function useCourseEditor(params: {
         const token = getActiveToken();
         if (!token) throw new Error('Token API tidak tersedia.');
 
-        // ✨ FIX 1: TANGKAP ID DARI URL PARAMETER "?course=15" DENGAN AMAN
+        // (KODE YANG BENAR)
         const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-        const courseQueryId = searchParams ? searchParams.get('course') : '';
+        const currentCourseId = searchParams ? searchParams.get('course') : null;
 
-        // Gabungkan prioritas: ID dari State (Jika ada) ATAU ID dari URL
-        const targetCourseId = basicData.course_id || courseQueryId;
+        // ✨ FIX KRITIS: Balik prioritasnya!
+        // Gunakan currentCourseId yang sudah dibuat di atas
+        const targetCourseId = currentCourseId || basicData.course_id;
 
-        // ✨ FIX 2: SABUK PENGAMAN (Mencegah error 404 karena ID undefined)
         if (!targetCourseId || String(targetCourseId) === 'undefined') {
           throw new Error('ID Kelas tidak ditemukan. Pastikan URL memiliki parameter ?course=...');
         }
@@ -432,7 +478,6 @@ export function useCourseEditor(params: {
         const formData = new FormData();
         formData.append('thumbnail', file);
 
-        // Header murni tanpa Content-Type agar FormData terbaca sempurna
         const customHeaders: HeadersInit = {
           Accept: 'application/json',
         };
@@ -440,9 +485,8 @@ export function useCourseEditor(params: {
           customHeaders.Authorization = `Bearer ${token}`;
         }
 
-        // ✨ FIX 3: KEMBALIKAN KE METHOD PUT MURNI 
         const response = await fetch(`${BASE_URL}/update/course/thumbnail/${targetCourseId}`, {
-          method: 'PUT', 
+          method: 'PUT',
           headers: customHeaders,
           body: formData,
         });
@@ -469,7 +513,7 @@ export function useCourseEditor(params: {
           setBasicData((prev) => ({ ...prev, thumbnail: uploadedUrl }));
           setInitialBasicData((prev) => ({ ...prev, thumbnail: uploadedUrl }));
         } else {
-          // Fallback memuat gambar langsung dari memori komputer jika API tidak membalas URL
+          // Fallback lokal
           const localPreviewUrl = URL.createObjectURL(file);
           setBasicData((prev) => ({ ...prev, thumbnail: localPreviewUrl }));
           setInitialBasicData((prev) => ({ ...prev, thumbnail: localPreviewUrl }));
@@ -483,7 +527,8 @@ export function useCourseEditor(params: {
         setIsUploadingThumbnail(false);
       }
     },
-    [basicData.course_id, getActiveToken, onUnauthorized, showToast],
+    // Pastikan courseQueryId (atau searchParams) tidak memicu infinite render, jadi cukup ambil manual di dalam fungsi seperti di atas
+    [basicData.course_id, getActiveToken, onUnauthorized, showToast]
   );
 
   const resolvedCourseId =

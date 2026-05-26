@@ -149,6 +149,8 @@ export default function OverviewTab({
 
         {activeSubTab === 'profile' && (
           <InstructorProfileTab
+            courseId={activeCourseId} // ✨ SUNTIKKAN INI
+            apiToken={apiToken}       // ✨ SUNTIKKAN INI
             formData={formData}
             setFormData={setFormData}
             fontClassName={googleSansAlt.className}
