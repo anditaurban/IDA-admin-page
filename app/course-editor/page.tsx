@@ -61,6 +61,7 @@ function getResolvedOwnerId() {
 function CourseEditorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const courseId = searchParams.get("course") || "";
   const { showToast } = useToast();
   const courseSlug = searchParams.get("course") || "default-course";
 
@@ -258,7 +259,7 @@ function CourseEditorContent() {
             <MaterialsTab courseSlug={courseSlug} />
           )}
           {!isFetching && activeTab === "videos" && <VideosTab />}
-          {!isFetching && activeTab === "assignments" && <AssignmentsTab />}
+          {!isFetching && activeTab === "assignments" && <AssignmentsTab courseId={courseId} />}
           {!isFetching && activeTab === "reviews" && <ReviewsTab />}
         </div>
       </main>
