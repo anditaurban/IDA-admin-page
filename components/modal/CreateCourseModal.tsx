@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DM_Sans } from 'next/font/google';
-import Image from 'next/image';
 import Cookies from 'js-cookie';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -11,9 +10,6 @@ const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700'
 
 const RAW_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const BASE_URL = RAW_BASE_URL.endsWith('/') ? RAW_BASE_URL.slice(0, -1) : RAW_BASE_URL;
-
-const COURSE_LEVELS = ['Beginner', 'Intermediate', 'Advanced'] as const;
-type CourseLevel = (typeof COURSE_LEVELS)[number];
 
 interface CreateCourseModalProps {
   isOpen: boolean;
@@ -40,6 +36,11 @@ interface CourseCategory {
   category_name: string;
 }
 
+interface CourseLevel {
+  level_id: number | string;
+  level_name: string;
+}
+
 function getStoredUserProfile(): UserProfile | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -51,28 +52,19 @@ function getStoredUserProfile(): UserProfile | null {
   }
 }
 
-// ✨ FIX 1: Hapus fallback owner_id agar user_id murni milik Instruktur
 function getResolvedUserId(userId?: string | number) {
   if (userId) return String(userId);
-
   const profile = getStoredUserProfile();
   const resolvedId = profile?.user_id ?? profile?.id ?? profile?.customer_id;
-
   return resolvedId ? String(resolvedId) : '';
 }
 
 function getResolvedAuthorName(authorName: string) {
   if (authorName && authorName.trim() && authorName !== 'Instruktur') return authorName.trim();
-
   const profile = getStoredUserProfile();
   if (profile?.name) return String(profile.name);
   if (profile?.email) return String(profile.email).split('@')[0];
-
   return 'Instruktur';
-}
-
-function resetFileInput(inputRef: React.RefObject<HTMLInputElement | null>) {
-  if (inputRef.current) inputRef.current.value = '';
 }
 
 function buildAuthHeaders(token?: string): HeadersInit {
@@ -81,14 +73,22 @@ function buildAuthHeaders(token?: string): HeadersInit {
   return headers;
 }
 
+// Filter duplikat berdasarkan nama agar tidak ada kategori ganda
 function dedupeCategories(categories: CourseCategory[]) {
   const categoryMap = new Map<string, CourseCategory>();
   categories.forEach((category) => {
     const id = String(category.category_id || '').trim();
-    const name = String(category.category_name || '').trim();
-    if (!id || !name) return;
-    if (!categoryMap.has(id)) {
-      categoryMap.set(id, { ...category, category_id: id, category_name: name });
+    const originalName = String(category.category_name || '').trim();
+    const nameKey = originalName.toLowerCase(); 
+
+    if (!id || !nameKey) return;
+    
+    if (!categoryMap.has(nameKey)) {
+      categoryMap.set(nameKey, { 
+        ...category, 
+        category_id: id, 
+        category_name: originalName
+      });
     }
   });
   return Array.from(categoryMap.values());
@@ -107,18 +107,18 @@ export default function CreateCourseModal({
 
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [level, setLevel] = useState<CourseLevel>('Beginner');
+  const [levelId, setLevelId] = useState(''); // ✨ FIX: Menggunakan levelId
   const [price, setPrice] = useState('');
 
+  // States: Dropdown Data
   const [categories, setCategories] = useState<CourseCategory[]>([]);
   const [isCategoryLoading, setIsCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
 
-  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
-  const [thumbnailPreview, setThumbnailPreview] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [levels, setLevels] = useState<CourseLevel[]>([]);
+  const [isLevelLoading, setIsLevelLoading] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleUnauthorized = () => {
     Cookies.remove('auth_session', { path: '/' });
@@ -132,28 +132,19 @@ export default function CreateCourseModal({
     router.replace('/login');
   };
 
-  // ✨ FIX 3: Reset form data setiap kali modal dibuka (mencegah Ghost Data)
+  // Reset form saat modal dibuka
   useEffect(() => {
     if (isOpen) {
       setTitle('');
-      setLevel('Beginner');
       setPrice('');
-      setThumbnailFile(null);
-      setThumbnailPreview('');
-      resetFileInput(fileInputRef);
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    return () => {
-      if (thumbnailPreview) URL.revokeObjectURL(thumbnailPreview);
-    };
-  }, [thumbnailPreview]);
-
+  // Fetch Kategori & Level secara bersamaan
   useEffect(() => {
     if (!isOpen) return;
 
-    const fetchCategories = async () => {
+    const fetchDropdownData = async () => {
       const cleanOwnerId = String(ownerId || '').trim();
       if (!BASE_URL || !cleanOwnerId) {
         setCategoryError('Konfigurasi API atau Owner ID tidak valid.');
@@ -162,47 +153,69 @@ export default function CreateCourseModal({
 
       try {
         setIsCategoryLoading(true);
+        setIsLevelLoading(true);
         setCategoryError(null);
 
         const token = Cookies.get('api_token') || process.env.NEXT_PUBLIC_API_TOKEN || '';
-        
-        // ✨ FIX 2: Tambahkan limit=100 agar semua kategori instruktur terbawa
-        const response = await fetch(`${BASE_URL}/table/course_category/${cleanOwnerId}/1?limit=100`, {
+        const headers = buildAuthHeaders(token);
+
+        // 1. Fetch Categories menggunakan /list agar terbawa semua
+        const catResponse = await fetch(`${BASE_URL}/list/course_category/${cleanOwnerId}`, {
           method: 'GET',
-          headers: buildAuthHeaders(token),
+          headers,
         });
 
-        if (response.status === 401 || response.status === 403) {
+        if (catResponse.status === 401 || catResponse.status === 403) {
           handleUnauthorized();
           return;
         }
 
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result?.message || `Gagal mengambil kategori (Status ${response.status})`);
+        if (catResponse.ok) {
+          const catResult = await catResponse.json();
+          const cleanCategories = dedupeCategories(catResult?.listData ?? []);
+          setCategories(cleanCategories);
+          if (cleanCategories.length > 0) {
+            setCategoryId((prev) => {
+              const isPrevStillAvailable = cleanCategories.some((c) => String(c.category_id) === String(prev));
+              return isPrevStillAvailable ? prev : String(cleanCategories[0].category_id);
+            });
+          } else {
+            setCategoryId('');
+          }
         }
 
-        const cleanCategories = dedupeCategories(result?.tableData ?? []);
-        setCategories(cleanCategories);
+        // 2. Fetch Levels 
+        const lvlResponse = await fetch(`${BASE_URL}/list/course_level/${cleanOwnerId}`, {
+          method: 'GET',
+          headers,
+        });
 
-        if (cleanCategories.length > 0) {
-          setCategoryId((prev) => {
-            const isPrevStillAvailable = cleanCategories.some((c) => String(c.category_id) === String(prev));
-            return isPrevStillAvailable ? prev : String(cleanCategories[0].category_id);
-          });
-        } else {
-          setCategoryId('');
+        if (lvlResponse.ok) {
+          const lvlResult = await lvlResponse.json();
+          const fetchedLevels = lvlResult.data || [];
+          setLevels(fetchedLevels);
+          
+          if (fetchedLevels.length > 0) {
+            // ✨ FIX: Set state levelId dengan ID dari API
+            setLevelId((prev) => {
+              const isPrevStillAvailable = fetchedLevels.some((l: CourseLevel) => String(l.level_id) === prev);
+              return isPrevStillAvailable ? prev : String(fetchedLevels[0].level_id);
+            });
+          } else {
+            setLevelId('');
+          }
         }
+
       } catch (error) {
-        console.error('Fetch course categories failed:', error);
-        setCategoryError(error instanceof Error ? error.message : 'Gagal mengambil kategori kelas.');
+        console.error('Fetch dropdown data failed:', error);
+        setCategoryError(error instanceof Error ? error.message : 'Gagal mengambil data kategori dan level.');
       } finally {
         setIsCategoryLoading(false);
+        setIsLevelLoading(false);
       }
     };
 
-    fetchCategories();
+    fetchDropdownData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, ownerId]);
 
@@ -211,29 +224,6 @@ export default function CreateCourseModal({
   const closeModal = () => {
     if (isSubmitting) return;
     onClose();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-
-    if (!allowedTypes.includes(file.type)) {
-      showToast('error', 'Format file tidak didukung. Harap pilih gambar JPG, PNG, atau WEBP.');
-      resetFileInput(fileInputRef);
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('error', 'Ukuran gambar terlalu besar. Maksimal 2MB.');
-      resetFileInput(fileInputRef);
-      return;
-    }
-
-    if (thumbnailPreview) URL.revokeObjectURL(thumbnailPreview);
-    setThumbnailFile(file);
-    setThumbnailPreview(URL.createObjectURL(file));
   };
 
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -246,6 +236,7 @@ export default function CreateCourseModal({
 
     const cleanTitle = title.trim();
     const cleanCategoryId = categoryId.trim();
+    const cleanLevelId = levelId.trim();
     const cleanOwnerId = String(ownerId || '').trim();
     const cleanUserId = getResolvedUserId(userId);
     const cleanAuthorName = getResolvedAuthorName(authorName);
@@ -256,8 +247,7 @@ export default function CreateCourseModal({
     if (!cleanUserId) return showToast('error', 'User ID (Instruktur) tidak ditemukan. Silakan login ulang.');
     if (!cleanCategoryId) return showToast('error', 'Kategori kelas wajib dipilih.');
     if (!cleanTitle) return showToast('error', 'Judul kelas wajib diisi.');
-    if (!COURSE_LEVELS.includes(level)) return showToast('error', 'Level kelas tidak valid.');
-    if (!thumbnailFile) return showToast('error', 'Harap unggah thumbnail kelas.');
+    if (!cleanLevelId) return showToast('error', 'Level kelas wajib dipilih.');
 
     setIsSubmitting(true);
 
@@ -266,14 +256,15 @@ export default function CreateCourseModal({
 
       const formData = new FormData();
       formData.append('owner_id', cleanOwnerId);
-      formData.append('user_id', cleanUserId); // ✨ SUDAH AMAN & PASTI ID INSTRUKTUR
+      formData.append('user_id', cleanUserId); 
       formData.append('category_id', cleanCategoryId);
+      formData.append('level_id', cleanLevelId); // ✨ FIX: Mengirim level_id persis sesuai permintaan SQL
       formData.append('title', cleanTitle);
-      formData.append('level', level);
       formData.append('price', String(numericPrice));
       formData.append('total_price', String(numericPrice));
       formData.append('author', cleanAuthorName);
-      formData.append('thumbnail', thumbnailFile);
+      
+      // Thumbnail dihapus karena tidak wajib di awal (quick create)
 
       const response = await fetch(`${BASE_URL}/add/course`, {
         method: 'POST',
@@ -303,7 +294,7 @@ export default function CreateCourseModal({
       const newCourseId = responseData?.id || responseData?.course_id || result?.insertId;
 
       if (!newCourseId) {
-        throw new Error('Kelas berhasil dibuat, tetapi ID kelas tidak dikembalikan oleh server.');
+        throw new Error('Kelas berhasil dibuat, tetapi ID kelas tidak dikembalikan.');
       }
 
       showToast('success', 'Kelas baru berhasil dibuat.');
@@ -327,7 +318,7 @@ export default function CreateCourseModal({
         <div className="p-6 md:p-8 overflow-y-auto no-scrollbar">
           <div className="flex items-center justify-between mb-6">
             <h3 className={`text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 ${googleSansAlt.className}`}>
-              <span className="material-symbols-outlined text-[#00BCD4]">add_circle</span> Buat Kelas Baru
+              <span className="material-symbols-outlined text-[#00BCD4]">bolt</span> Quick Create Kelas
             </h3>
             <button
               type="button"
@@ -341,6 +332,7 @@ export default function CreateCourseModal({
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* === DROPDOWN KATEGORI === */}
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Kategori</label>
                 <select
@@ -350,7 +342,7 @@ export default function CreateCourseModal({
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#00BCD4]/50 disabled:opacity-70"
                 >
                   {isCategoryLoading ? (
-                    <option value="">Memuat kategori...</option>
+                    <option value="">Memuat...</option>
                   ) : categories.length > 0 ? (
                     categories.map((category) => (
                       <option key={category.category_id} value={String(category.category_id)}>
@@ -358,32 +350,38 @@ export default function CreateCourseModal({
                       </option>
                     ))
                   ) : (
-                    <option value="">Kategori belum tersedia</option>
+                    <option value="">Belum tersedia</option>
                   )}
                 </select>
-
-                {categoryError && (
-                  <p className="mt-2 text-xs font-medium text-red-500">{categoryError}</p>
-                )}
+                {categoryError && <p className="mt-2 text-xs font-medium text-red-500">{categoryError}</p>}
               </div>
 
+              {/* === DROPDOWN LEVEL DINAMIS === */}
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Level</label>
                 <select
-                  value={level}
-                  onChange={(e) => setLevel(e.target.value as CourseLevel)}
-                  disabled={isSubmitting}
+                  value={levelId}
+                  onChange={(e) => setLevelId(e.target.value)}
+                  disabled={isSubmitting || isLevelLoading || levels.length === 0}
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#00BCD4]/50 disabled:opacity-70"
                 >
-                  <option value="Beginner">🟢 Beginner</option>
-                  <option value="Intermediate">🟡 Intermediate</option>
-                  <option value="Advanced">🔴 Advanced</option>
+                  {isLevelLoading ? (
+                    <option value="">Memuat...</option>
+                  ) : levels.length > 0 ? (
+                    levels.map((lvl) => (
+                      <option key={lvl.level_id} value={String(lvl.level_id)}>
+                        {lvl.level_name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Belum tersedia</option>
+                  )}
                 </select>
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Nama / Topik Kelas</label>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Judul Kelas</label>
               <input
                 type="text"
                 required
@@ -409,54 +407,15 @@ export default function CreateCourseModal({
               />
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Thumbnail Kelas (JPG/PNG/WEBP, Maks 2MB)</label>
-              <input
-                type="file"
-                accept="image/png, image/jpeg, image/jpg, image/webp"
-                className="hidden"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                disabled={isSubmitting}
-              />
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isSubmitting}
-                className="w-full aspect-video bg-slate-50 dark:bg-slate-900 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative overflow-hidden group shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                {thumbnailPreview ? (
-                  <>
-                    <Image src={thumbnailPreview} alt="Preview Thumbnail" fill className="object-cover" unoptimized />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <span className="text-white text-xs font-bold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[16px]">image</span> Ganti Gambar
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-600 mb-2 group-hover:text-[#00BCD4] transition-colors">add_photo_alternate</span>
-                    <span className="text-xs font-medium text-slate-500">Klik untuk upload gambar</span>
-                  </>
-                )}
-              </button>
-            </div>
-
             <button
               type="submit"
-              disabled={isSubmitting || isCategoryLoading || categories.length === 0}
-              className={`w-full py-3.5 mt-4 bg-[#00BCD4] hover:bg-cyan-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${googleSansAlt.className}`}
+              disabled={isSubmitting || isCategoryLoading || isLevelLoading || categories.length === 0 || levels.length === 0}
+              className={`w-full py-3.5 mt-2 bg-[#00BCD4] hover:bg-cyan-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${googleSansAlt.className}`}
             >
               {isSubmitting ? (
-                <>
-                  <span className="material-symbols-outlined animate-spin text-[18px]">sync</span> Memproses Data...
-                </>
+                <><span className="material-symbols-outlined animate-spin text-[18px]">sync</span> Memproses...</>
               ) : (
-                <>
-                  Buat Kelas <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-                </>
+                <>Buat Kelas Sekarang <span className="material-symbols-outlined text-[18px]">arrow_forward</span></>
               )}
             </button>
           </form>

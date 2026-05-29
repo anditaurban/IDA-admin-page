@@ -15,7 +15,8 @@ interface ApiAllCourseItem {
   title: string;
   deskripsi: string;
   tech_stack: string[];
-  level: string;
+  level_id: number;       
+  level_name: string;
   price: number;
   discount_nominal: number;
   discount_percent: number;
@@ -416,17 +417,17 @@ export default function AllCoursesPage() {
                     <td className="px-4 py-4 align-top overflow-hidden">
                       <span
                         className={`inline-block max-w-full truncate px-2 py-1 rounded text-[9px] font-extrabold uppercase tracking-wider border ${
-                          course.level?.toLowerCase() === "beginner"
+                          course.level_name?.toLowerCase() === "beginner"
                             ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800"
-                            : course.level?.toLowerCase() === "intermediate"
+                            : course.level_name?.toLowerCase() === "intermediate"
                             ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800"
-                            : course.level?.toLowerCase() === "advanced"
+                            : course.level_name?.toLowerCase() === "advanced"
                             ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800"
                             : "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
                         }`}
-                        title={course.level || "Uncategorized"}
+                        title={course.level_name || "Uncategorized"}
                       >
-                        {course.level || "Uncategorized"}
+                        {course.level_name || "Uncategorized"}
                       </span>
                     </td>
 
