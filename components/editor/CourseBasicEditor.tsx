@@ -60,22 +60,49 @@ export default function CourseBasicEditor({
 }: CourseBasicEditorProps) {
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
-  // State untuk menampung gambar preview instan
+  // State tunggal untuk preview gambar lokal
   const [localPreview, setLocalPreview] = useState<string | null>(null);
-  
-  // State untuk melacak ID kelas sebelumnya (Pola resmi React pengganti useEffect)
+
+  // State lokal khusus untuk menjaga ketikan desimal persen agar tidak hilang
+  const [localPercentInput, setLocalPercentInput] = useState("");
+
+  // State untuk melacak ID kelas sebelumnya
   const [prevSlug, setPrevSlug] = useState(courseSlug);
 
-  // ✨ FIX 1: POLA ANTI-BOCOR MEMORI (Tanpa useEffect)
-  // Jika instruktur pindah ke kelas lain, reset preview langsung di fase render
+  // Pola Fase Render resmi React untuk sinkronisasi state dari prop tanpa useEffect
+  const [prevFinancialState, setPrevFinancialState] = useState({
+    percent: basicData.discount_percent,
+    mode: discountMode,
+    editing: isEditing,
+  });
+
+  if (
+    basicData.discount_percent !== prevFinancialState.percent ||
+    discountMode !== prevFinancialState.mode ||
+    isEditing !== prevFinancialState.editing
+  ) {
+    setPrevFinancialState({
+      percent: basicData.discount_percent,
+      mode: discountMode,
+      editing: isEditing,
+    });
+    if (isEditing && discountMode === "percent") {
+      setLocalPercentInput(String(basicData.discount_percent || ""));
+    }
+  }
+
+  // Reset preview saat pindah kelas
   if (courseSlug !== prevSlug) {
     setPrevSlug(courseSlug);
     setLocalPreview(null);
   }
 
-  // ✨ FIX 2: LOGIKA PENENTUAN URL DENGAN ANTI-CACHE
+  // LOGIKA PENENTUAN URL DENGAN ANTI-CACHE
   const displayThumbnail = React.useMemo(() => {
-    const rawBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "";
+    const rawBaseUrl =
+      process.env.NEXT_PUBLIC_API_BASE_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      "";
     let baseUrl = rawBaseUrl.replace(/\/+$/, "");
 
     if (baseUrl.endsWith("/api")) {
@@ -95,7 +122,6 @@ export default function CourseBasicEditor({
     }
 
     const filename = thumb.split("/").pop();
-    // Tambahkan '?t=' agar browser selalu memuat gambar terbaru
     return `${baseUrl}/thumbnail/course/${filename}?t=${new Date().getTime()}`;
   }, [basicData.thumbnail]);
 
@@ -104,7 +130,7 @@ export default function CourseBasicEditor({
 
   const [secureImageUrl, setSecureImageUrl] = useState<string>("");
 
-  // ✨ FIX 3: LOGIKA FETCH GAMBAR BEBAS CORS (Tanpa Header Auth)
+  // LOGIKA FETCH GAMBAR BEBAS CORS
   useEffect(() => {
     const fetchSecureImage = async () => {
       if (
@@ -119,7 +145,6 @@ export default function CourseBasicEditor({
 
       try {
         const response = await fetch(displayThumbnail);
-
         if (response.ok) {
           const blob = await response.blob();
           const objectUrl = URL.createObjectURL(blob);
@@ -164,6 +189,7 @@ export default function CourseBasicEditor({
         ? genericDiscount
         : 0;
 
+  // ✨ KEMBALIKAN VARIABEL YANG HILANG
   const currentEditDiscount =
     discountMode === "percent"
       ? String(displayPercent)
@@ -174,17 +200,38 @@ export default function CourseBasicEditor({
     : displayPercent > 0
       ? "percent"
       : "nominal";
+
+  // ✨ FIX 1: Saat edit persen, ambil langsung dari localPercentInput yang sedang diketik
   const currentValueForCalc = isEditing
-    ? currentEditDiscount
+    ? discountMode === "percent"
+      ? localPercentInput || "0"
+      : String(displayNominal)
     : String(displayPercent > 0 ? displayPercent : displayNominal);
 
-  const calculatedFinal = calculateTotalPrice(
-    basicData.price,
-    currentModeForCalc,
-    currentValueForCalc,
-  );
+  // ✨ FIX 2: Hitung manual khusus untuk mode persen agar titik desimal tidak dihancurkan
+  let calculatedFinal = 0;
+  if (currentModeForCalc === "percent") {
+    // Gunakan angka mentah yang diketik (contoh: 25.5)
+    const activePercent = isEditing
+      ? Number(localPercentInput) || 0
+      : displayPercent;
+    // Hitung potongan harga dan bulatkan nilai akhirnya (Rupiah tidak pakai sen)
+    calculatedFinal = Math.max(
+      0,
+      Math.round(parsedPrice - (parsedPrice * activePercent) / 100),
+    );
+  } else {
+    // Jika mode nominal, tetap gunakan utilitas bawaan Anda
+    calculatedFinal = calculateTotalPrice(
+      basicData.price,
+      currentModeForCalc,
+      currentValueForCalc,
+    );
+  }
 
-  const finalPrice = calculatedFinal > 0 ? calculatedFinal : parsedPrice;
+  // ✨ FIX 3: Pastikan diskon 100% (Gratis / Rp0) bisa tampil dengan benar
+  const hasDiscount = Number(currentValueForCalc) > 0;
+  const finalPrice = hasDiscount ? calculatedFinal : parsedPrice;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -235,7 +282,6 @@ export default function CourseBasicEditor({
           onChange={handleFileChange}
         />
 
-        {/* Kotak Gambar Thumbnail */}
         <div
           className={`group relative w-full aspect-4/3 rounded-3xl overflow-hidden shadow-sm bg-slate-100 dark:bg-slate-900 transition-all duration-300 ${
             isFetching || isUploadingThumbnail
@@ -267,7 +313,6 @@ export default function CourseBasicEditor({
               }}
             />
           ) : (
-            /* UX Baru: Placeholder Inisial Judul Kelas di Editor */
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 transition-all duration-500">
               <span
                 className={`text-6xl lg:text-7xl font-black text-slate-300 dark:text-slate-600/80 uppercase tracking-widest drop-shadow-sm transition-all ${googleSansAlt.className}`}
@@ -334,274 +379,303 @@ export default function CourseBasicEditor({
           )}
         </div>
 
-        <div
-          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 ${isFetching ? "opacity-50" : ""}`}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
-              <span className="material-symbols-outlined text-[14px]">
-                person
-              </span>
-              {basicData.author_name || basicData.author || "Instruktur"}
-            </div>
-            <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
-              <span className="material-symbols-outlined text-[14px]">
-                group
-              </span>
-              {basicData.students} Siswa
-            </div>
-          </div>
-
-          <div className="animate-in fade-in zoom-in-95 duration-300">
-            {isEditing ? (
-              <button
-                onClick={onCancelToggle}
-                className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 rounded-xl text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all border border-rose-200 dark:border-rose-500/30 active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[16px]">
-                  close
-                </span>{" "}
-                Batal Edit
-              </button>
-            ) : (
-              <button
-                onClick={onEditToggle}
-                className="flex items-center gap-1.5 px-4 py-2 bg-cyan-50 dark:bg-cyan-500/10 text-[#00BCD4] rounded-xl text-xs font-bold hover:bg-[#00BCD4] hover:text-white transition-all border border-cyan-200 dark:border-cyan-500/30 active:scale-95 group"
-              >
-                <span className="material-symbols-outlined text-[16px] group-hover:rotate-12 transition-transform">
-                  edit
-                </span>{" "}
-                Edit Info Kelas
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="flex flex-col gap-5 mt-6">
+          {/* --- 1. HEADER: INFO INSTRUKTUR, SISWA, & TOMBOL EDIT --- */}
           <div
-            className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-2"}`}
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2 ${isFetching ? "opacity-50" : ""}`}
           >
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">
-                category
-              </span>
-              Kategori
-            </label>
-            {isEditing ? (
-              <select
-                value={basicData.category_id || ""}
-                onChange={(e) =>
-                  onChange(
-                    "category_id",
-                    e.target.value ? Number(e.target.value) : 1,
-                  )
-                }
-                disabled={isFetching || isCategoryLoading}
-                className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {categories.length > 0 ? (
-                  categories.map((c) => (
-                    <option key={c.category_id} value={c.category_id}>
-                      {c.category_name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">Belum tersedia</option>
-                )}
-              </select>
-            ) : (
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                {basicData.category_name || "Umum"}
-              </span>
-            )}
-          </div>
-
-          <div
-            className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-2"}`}
-          >
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">
-                stairs
-              </span>
-              Tingkat
-            </label>
-            {isEditing ? (
-              <select
-                value={basicData.level}
-                onChange={(e) => onChange("level", e.target.value)}
-                disabled={isFetching || isLevelLoading}
-                className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {levels.map((level) => (
-                  <option key={level} value={level}>
-                    {level}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                {basicData.level || "Beginner"}
-              </span>
-            )}
-          </div>
-
-          <div
-            className={`relative flex flex-col items-start justify-center flex-1 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-2"}`}
-          >
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[14px]">
-                payments
-              </span>
-              Harga Dasar
-            </label>
-            {isEditing ? (
-              <div className="flex items-center w-full mt-0.5">
-                <span className="text-sm font-bold text-slate-400 mr-1.5">
-                  Rp
-                </span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={
-                    !basicData.price || basicData.price === "0"
-                      ? ""
-                      : formatRibuan(basicData.price)
-                  }
-                  onChange={(e) =>
-                    onChange("price", normalizeNumberString(e.target.value))
-                  }
-                  className="w-full bg-transparent border-0 p-0 text-sm font-bold outline-none focus:ring-0 placeholder:text-slate-300 text-slate-900 dark:text-white"
-                  placeholder="0"
-                />
-              </div>
-            ) : (
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                Rp {formatRibuan(parsedPrice)}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* ================= MULAI BLOK DISKON & HARGA ================= */}
-        <div className="mt-4 flex flex-col md:flex-row gap-4">
-          {/* KOTAK KIRI: ATUR DISKON */}
-          <div
-            className={`flex-1 flex flex-col sm:flex-row sm:items-center gap-3 transition-all duration-500 ${isEditing ? "p-4 rounded-2xl bg-rose-50/50 dark:bg-rose-500/5 border border-rose-100 dark:border-rose-500/20" : "px-2 py-4"}`}
-          >
-            <div
-              className={`flex flex-col gap-2 ${isEditing ? "sm:w-5/12" : ""}`}
-            >
-              <label className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
                 <span className="material-symbols-outlined text-[14px]">
-                  loyalty
+                  person
                 </span>
-                {isEditing ? "Atur Diskon" : "Diskon Diterapkan"}
+                {basicData.author_name || basicData.author || "Instruktur"}
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs font-bold bg-slate-100 dark:bg-[#161616] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                <span className="material-symbols-outlined text-[14px]">
+                  group
+                </span>
+                {basicData.students} Siswa
+              </div>
+            </div>
+
+            <div className="animate-in fade-in zoom-in-95 duration-300">
+              {isEditing ? (
+                <button
+                  onClick={onCancelToggle}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 rounded-xl text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all border border-rose-200 dark:border-rose-500/30 active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    close
+                  </span>
+                  Batal Edit
+                </button>
+              ) : (
+                <button
+                  onClick={onEditToggle}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-cyan-50 dark:bg-cyan-500/10 text-[#00BCD4] rounded-xl text-xs font-bold hover:bg-[#00BCD4] hover:text-white transition-all border border-cyan-200 dark:border-cyan-500/30 active:scale-95 group"
+                >
+                  <span className="material-symbols-outlined text-[16px] group-hover:rotate-12 transition-transform">
+                    edit
+                  </span>
+                  Edit Info Kelas
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* --- 2. INFO UTAMA: KATEGORI & TINGKAT --- */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Kategori */}
+            <div
+              className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-3 bg-white dark:bg-[#111111] rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm"}`}
+            >
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]">
+                  category
+                </span>
+                Kategori
               </label>
-              {isEditing && (
-                <div className="flex rounded-lg bg-white/70 dark:bg-[#111111] p-1 border border-rose-100 dark:border-rose-500/20 animate-in fade-in">
-                  <button
-                    type="button"
-                    onClick={() => onDiscountModeChange("percent")}
-                    className={`flex-1 rounded-md px-2 py-1 text-[10px] font-bold transition-all ${discountMode === "percent" ? "bg-rose-500 text-white" : "text-rose-500 hover:bg-rose-100"}`}
-                  >
-                    Persen
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDiscountModeChange("nominal")}
-                    className={`flex-1 rounded-md px-2 py-1 text-[10px] font-bold transition-all ${discountMode === "nominal" ? "bg-rose-500 text-white" : "text-rose-500 hover:bg-rose-100"}`}
-                  >
-                    Nominal
-                  </button>
-                </div>
+              {isEditing ? (
+                <select
+                  value={String(basicData.category_id || "")}
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    onChange(
+                      "category_id",
+                      selectedId ? Number(selectedId) : "",
+                    );
+                    const selectedCat = categories.find(
+                      (c) => String(c.category_id) === selectedId,
+                    );
+                    if (selectedCat) {
+                      onChange("category_name", selectedCat.category_name);
+                    }
+                  }}
+                  disabled={isFetching || isCategoryLoading}
+                  className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="" disabled>
+                    Pilih Kategori...
+                  </option>
+                  {categories.length > 0 ? (
+                    categories.map((c) => (
+                      <option key={c.category_id} value={String(c.category_id)}>
+                        {c.category_name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>
+                      Belum tersedia
+                    </option>
+                  )}
+                </select>
+              ) : (
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  {basicData.category_name || "Umum"}
+                </span>
               )}
             </div>
 
+            {/* Tingkat / Level */}
             <div
-              className={`relative flex items-center flex-1 transition-all ${isEditing ? "bg-white/60 dark:bg-[#161616]/60 rounded-xl px-4 py-2 border border-rose-100 dark:border-rose-500/20" : ""}`}
+              className={`flex flex-col gap-1.5 transition-all duration-300 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60 focus-within:border-[#00BCD4]/50 focus-within:ring-2 focus-within:ring-[#00BCD4]/10" : "p-3 bg-white dark:bg-[#111111] rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm"}`}
             >
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[14px]">
+                  stairs
+                </span>
+                Tingkat
+              </label>
               {isEditing ? (
-                <>
-                  {discountMode === "nominal" && (
-                    <span className="text-sm font-bold text-rose-500/50 mr-2">
+                <select
+                  value={basicData.level}
+                  onChange={(e) => onChange("level", e.target.value)}
+                  disabled={isFetching || isLevelLoading}
+                  className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {levels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  {basicData.level || "Beginner"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* --- 3. AREA KEUANGAN (HARGA, DISKON, ESTIMASI) --- */}
+          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+            {/* Kartu Kiri: Harga Dasar & Diskon */}
+            <div
+              className={`flex-[1.5] flex flex-col sm:flex-row gap-4 transition-all duration-500 ${isEditing ? "p-4 rounded-2xl bg-[#fafafa] dark:bg-[#161616] border border-slate-200/60 dark:border-slate-800/60" : "p-3 bg-white dark:bg-[#111111] rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm"}`}
+            >
+              {/* Harga Dasar */}
+              <div className="flex-1 flex flex-col gap-1.5 justify-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[14px]">
+                    payments
+                  </span>
+                  Harga Dasar
+                </label>
+                {isEditing ? (
+                  <div className="flex items-center w-full mt-0.5">
+                    <span className="text-sm font-bold text-slate-400 mr-1">
                       Rp
                     </span>
-                  )}
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={
-                      !currentEditDiscount || currentEditDiscount === "0"
-                        ? ""
-                        : discountMode === "nominal"
-                          ? formatRibuan(currentEditDiscount)
-                          : currentEditDiscount
-                    }
-                    onChange={(e) => {
-                      let val = normalizeNumberString(e.target.value);
-                      if (discountMode === "percent" && Number(val) > 100)
-                        val = "100";
-
-                      if (discountMode === "nominal") {
-                        onChange("discount_nominal", val);
-                      } else {
-                        onChange("discount_percent", val);
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={
+                        !basicData.price || basicData.price === "0"
+                          ? ""
+                          : formatRibuan(basicData.price)
                       }
-                    }}
-                    className={`w-full bg-transparent border-0 p-0 text-lg font-black text-rose-600 dark:text-rose-400 outline-none focus:ring-0 placeholder:text-rose-300 ${discountMode === "percent" ? "text-right" : "text-left"}`}
-                    placeholder="0"
-                  />
-                  {discountMode === "percent" && (
-                    <span className="text-lg font-bold text-rose-500/50 ml-2">
-                      %
+                      onChange={(e) =>
+                        onChange("price", normalizeNumberString(e.target.value))
+                      }
+                      className="w-full bg-transparent border-0 p-0 text-sm font-bold outline-none focus:ring-0 placeholder:text-slate-300 text-slate-900 dark:text-white"
+                      placeholder="0"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">
+                    Rp{formatRibuan(parsedPrice)}
+                  </span>
+                )}
+              </div>
+
+              {/* Garis Pemisah Visual */}
+              <div className="hidden sm:block w-px bg-slate-200 dark:bg-slate-800 my-1"></div>
+              {/* Garis Pemisah Mobile */}
+              <div className="block sm:hidden h-px w-full bg-slate-200 dark:bg-slate-800 my-1"></div>
+
+              {/* Atur Diskon */}
+              <div className="flex-1 flex flex-col gap-1.5 justify-center">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[14px]">
+                      loyalty
                     </span>
-                  )}
-                </>
-              ) : (
-                <div className="flex items-center">
-                  {displayPercent > 0 || displayNominal > 0 ? (
-                    <div className="inline-flex items-center gap-1.5 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-md px-3 py-1.5 w-max shadow-sm">
-                      <span className="material-symbols-outlined text-[16px] text-rose-500">
-                        sell
-                      </span>
-                      <span className="text-xs font-bold text-rose-600 dark:text-rose-400 tracking-wide">
-                        {displayPercent > 0
-                          ? `${displayPercent}%`
-                          : `Rp ${formatRibuan(displayNominal)}`}
-                      </span>
+                    {isEditing ? "Diskon" : "Diskon Diterapkan"}
+                  </label>
+
+                  {isEditing && (
+                    <div className="flex rounded-md bg-white dark:bg-[#111111] p-0.5 border border-rose-100 dark:border-rose-500/20 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => onDiscountModeChange("percent")}
+                        className={`rounded px-1.5 py-0.5 text-[9px] font-bold transition-all ${discountMode === "percent" ? "bg-rose-500 text-white" : "text-rose-500 hover:bg-rose-50"}`}
+                      >
+                        %
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDiscountModeChange("nominal")}
+                        className={`rounded px-1.5 py-0.5 text-[9px] font-bold transition-all ${discountMode === "nominal" ? "bg-rose-500 text-white" : "text-rose-500 hover:bg-rose-50"}`}
+                      >
+                        Rp
+                      </button>
                     </div>
-                  ) : (
-                    <span className="text-xl font-black text-slate-300 dark:text-slate-700">
-                      0
-                    </span>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* KOTAK KANAN: ESTIMASI HARGA JUAL */}
-          <div
-            className={`md:w-[40%] flex flex-col justify-center rounded-2xl border px-5 py-4 transition-all duration-500 ${isEditing ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10" : "border-transparent bg-transparent pl-2"}`}
-          >
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-1.5">
-              Estimasi Harga Jual
-            </span>
-            <div className="flex flex-col">
-              {parsedPrice > 0 && finalPrice < parsedPrice && (
-                <span className="text-xs font-bold text-slate-400 line-through decoration-rose-500/40 decoration-2 mb-0.5">
-                  Rp {formatRibuan(parsedPrice)}
-                </span>
-              )}
+                {isEditing ? (
+                  <div className="flex items-center w-full mt-0.5">
+                    {discountMode === "nominal" && (
+                      <span className="text-sm font-bold text-rose-500/60 mr-1">
+                        Rp
+                      </span>
+                    )}
+                    <input
+                      type="text"
+                      inputMode={
+                        discountMode === "percent" ? "decimal" : "numeric"
+                      }
+                      value={
+                        discountMode === "percent"
+                          ? localPercentInput
+                          : !currentEditDiscount || currentEditDiscount === "0"
+                            ? ""
+                            : formatRibuan(currentEditDiscount)
+                      }
+                      onChange={(e) => {
+                        if (discountMode === "percent") {
+                          let val = e.target.value
+                            .replace(/,/g, ".")
+                            .replace(/[^0-9.]/g, "");
+                          const parts = val.split(".");
+                          if (parts.length > 2)
+                            val = parts[0] + "." + parts.slice(1).join("");
+                          if (Number(val) > 100) val = "100";
+
+                          setLocalPercentInput(val);
+                          onChange("discount_percent", val);
+                        } else {
+                          const val = normalizeNumberString(e.target.value);
+                          onChange("discount_nominal", val);
+                        }
+                      }}
+                      className={`w-full bg-transparent border-0 p-0 text-lg font-black text-rose-600 dark:text-rose-400 outline-none focus:ring-0 placeholder:text-rose-300 ${discountMode === "percent" ? "text-right pr-1" : "text-left"}`}
+                      placeholder="0"
+                    />
+                    {discountMode === "percent" && (
+                      <span className="text-lg font-bold text-rose-500/60">
+                        %
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center">
+                    {displayPercent > 0 || displayNominal > 0 ? (
+                      <div className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-md px-2 py-1 shadow-sm">
+                        <span className="material-symbols-outlined text-[14px] text-rose-500">
+                          sell
+                        </span>
+                        <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                          {displayPercent > 0
+                            ? `${displayPercent}%`
+                            : `Rp${formatRibuan(displayNominal)}`}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm font-bold text-slate-300 dark:text-slate-700">
+                        Tidak ada
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Kartu Kanan: Estimasi Harga Jual */}
+            <div
+              className={`flex-1 flex flex-col justify-center rounded-2xl border px-5 py-4 transition-all duration-500 ${isEditing ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10" : "border-slate-100 bg-white dark:border-slate-800/50 dark:bg-[#111111] shadow-sm"}`}
+            >
               <span
-                className={`font-black text-emerald-700 dark:text-emerald-400 leading-none tracking-tight ${isEditing ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"}`}
+                className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isEditing ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}
               >
-                Rp {formatRibuan(finalPrice)}
+                Estimasi Harga Jual
               </span>
+              <div className="flex flex-col">
+                {parsedPrice > 0 && finalPrice < parsedPrice && (
+                  <span className="text-xs font-bold text-slate-400 line-through decoration-rose-500/40 decoration-2 mb-0.5">
+                    Rp{formatRibuan(parsedPrice)}
+                  </span>
+                )}
+                <span
+                  className={`font-black leading-none tracking-tight ${isEditing ? "text-emerald-700 dark:text-emerald-400 text-2xl sm:text-3xl" : "text-slate-900 dark:text-white text-2xl sm:text-3xl"}`}
+                >
+                  Rp{formatRibuan(finalPrice)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-        {/* ================= AKHIR BLOK DISKON & HARGA ================= */}
       </div>
     </div>
   );
