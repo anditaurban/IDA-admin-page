@@ -3,15 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Cookies from 'js-cookie';
 import { BASE_URL, buildJsonHeaders, readApiResponse } from '@/utils/api';
-
-const DEFAULT_COURSE_LEVELS = ['Beginner', 'Intermediate', 'Advanced'] as const;
-
-type CourseLevelRow = {
-  level?: string;
-};
+import type { CourseLevel } from './useCourseEditor'; // ✨ Import Tipe Data yang benar
 
 type CourseLevelResponse = {
-  tableData?: CourseLevelRow[];
+  tableData?: CourseLevel[];
   message?: string;
 };
 
@@ -21,18 +16,9 @@ type UseCourseLevelsParams = {
   onError?: (message: string) => void;
 };
 
-function uniqueLevels(levels: string[]) {
-  return Array.from(
-    new Set(
-      levels
-        .map((level) => level.trim())
-        .filter(Boolean),
-    ),
-  );
-}
-
 export function useCourseLevels({ ownerId, onUnauthorized, onError }: UseCourseLevelsParams) {
-  const [levels, setLevels] = useState<string[]>([...DEFAULT_COURSE_LEVELS]);
+  // ✨ FIX 1: Gunakan tipe CourseLevel[], bukan string[]
+  const [levels, setLevels] = useState<CourseLevel[]>([]); 
   const [isLevelLoading, setIsLevelLoading] = useState(false);
 
   const onUnauthorizedRef = useRef(onUnauthorized);
@@ -50,7 +36,7 @@ export function useCourseLevels({ ownerId, onUnauthorized, onError }: UseCourseL
     const cleanOwnerId = String(ownerId || '').trim();
 
     if (!BASE_URL || !cleanOwnerId) {
-      setLevels([...DEFAULT_COURSE_LEVELS]);
+      setLevels([]); // Kosongkan jika ownerId belum siap
       return;
     }
 
@@ -58,7 +44,9 @@ export function useCourseLevels({ ownerId, onUnauthorized, onError }: UseCourseL
       setIsLevelLoading(true);
 
       const token = Cookies.get('api_token') || process.env.NEXT_PUBLIC_API_TOKEN || '';
-      const response = await fetch(`${BASE_URL}/table/course/${cleanOwnerId}/1`, {
+      
+      // ✨ FIX 2: Tembak ke endpoint Master Level yang benar!
+      const response = await fetch(`${BASE_URL}/table/course_level/${cleanOwnerId}/1`, {
         method: 'GET',
         headers: buildJsonHeaders(token),
       });
@@ -74,20 +62,20 @@ export function useCourseLevels({ ownerId, onUnauthorized, onError }: UseCourseL
         const message =
           typeof result === 'object' && result !== null && 'message' in result
             ? String(result.message)
-            : `Gagal mengambil level kelas (Status ${response.status})`;
+            : `Gagal mengambil master level (Status ${response.status})`;
 
         throw new Error(message);
       }
 
-      const apiLevels =
-        typeof result === 'object' && result !== null && Array.isArray(result.tableData)
-          ? result.tableData.map((course: CourseLevelRow) => course.level || '')
-          : [];
-
-      setLevels(uniqueLevels([...DEFAULT_COURSE_LEVELS, ...apiLevels]));
+      // ✨ FIX: Yakinkan TypeScript bahwa result adalah objek (bukan string)
+      if (typeof result === 'object' && result !== null && 'tableData' in result && Array.isArray(result.tableData)) {
+        setLevels(result.tableData);
+      } else {
+        setLevels([]);
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Gagal mengambil level kelas.';
-      setLevels([...DEFAULT_COURSE_LEVELS]);
+      const message = error instanceof Error ? error.message : 'Gagal mengambil master level.';
+      setLevels([]);
       onErrorRef.current?.(message);
     } finally {
       setIsLevelLoading(false);

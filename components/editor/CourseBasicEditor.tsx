@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { DM_Sans } from "next/font/google";
 
-import type { BasicCourseData } from "@/hooks/useCourseEditor";
+import type { BasicCourseData, CourseLevel } from '@/hooks/useCourseEditor';
 import type { CourseCategory } from "@/hooks/useCourseCategories";
 import type { DiscountMode } from "@/utils/coursePricing";
 
@@ -22,7 +22,7 @@ type CourseBasicEditorProps = {
   courseSlug: string;
   basicData: BasicCourseData;
   categories: CourseCategory[];
-  levels: string[];
+  levels: CourseLevel[];
   isFetching: boolean;
   isCategoryLoading: boolean;
   isLevelLoading: boolean;
@@ -31,10 +31,7 @@ type CourseBasicEditorProps = {
   isEditing: boolean;
   onEditToggle: () => void;
   onCancelToggle: () => void;
-  onChange: (
-    field: keyof BasicCourseData,
-    value: string | boolean | number,
-  ) => void;
+  onChange: (field: keyof BasicCourseData, value: string | number | boolean) => void;
   onDiscountModeChange: (mode: DiscountMode) => void;
   onThumbnailUpload: (file: File) => void;
   onFileError: (message: string) => void;
@@ -485,24 +482,25 @@ export default function CourseBasicEditor({
                 <span className="material-symbols-outlined text-[14px]">
                   stairs
                 </span>
-                Tingkat
+                Level
               </label>
               {isEditing ? (
                 <select
-                  value={basicData.level}
-                  onChange={(e) => onChange("level", e.target.value)}
+                  value={basicData.level_id || ""}
+                  onChange={(e) => onChange("level_id", Number(e.target.value))}
                   disabled={isFetching || isLevelLoading}
                   className="w-full bg-transparent border-0 p-0 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {levels.map((level) => (
-                    <option key={level} value={level}>
-                      {level}
+                  {levels.map((level, index) => (
+                    <option key={level?.level_id ? `level-${level.level_id}` : `fallback-${index}`} value={level?.level_id || ""}>
+                      {level?.level_name || "Pilih Level..."}
                     </option>
                   ))}
                 </select>
               ) : (
                 <span className="text-sm font-bold text-slate-900 dark:text-white">
-                  {basicData.level || "Beginner"}
+                  {/* ✨ FIX: Cek ID yang tersimpan, cari namanya di master data Levels (Otomatis & Akurat!) */}
+                  {levels.find(l => l.level_id === basicData.level_id)?.level_name || basicData.level_name || "Beginner"}
                 </span>
               )}
             </div>

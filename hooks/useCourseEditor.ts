@@ -14,6 +14,12 @@ import {
 } from '@/utils/coursePricing';
 import type { CourseCategory } from '@/hooks/useCourseCategories';
 
+export interface CourseLevel {
+  level_id: number;
+  owner_id: number;
+  level_name: string;
+}
+
 type ToastType = 'success' | 'error' | 'info' | 'loading';
 type ToastFn = (type: ToastType, message: string) => void;
 type ApiRecord = Record<string, unknown>;
@@ -36,7 +42,8 @@ export interface BasicCourseData {
   author_name?: string;
   title: string;
   thumbnail: string;
-  level: string;
+  level_id?: number;
+  level_name?: string;
   price: string;
   discount: string;
   discount_nominal?: string;
@@ -57,7 +64,8 @@ export const defaultBasicData: BasicCourseData = {
   course_id: undefined,
   title: '',
   thumbnail: '',
-  level: 'Beginner',
+  level_id: 1, 
+  level_name: 'Beginner',
   price: '',
   discount: '',
   discount_nominal: '',
@@ -148,16 +156,21 @@ function extractCoursePayload(resJson: unknown, courseSlug: string): ApiRecord |
 function normalizeCourseData(apiData: ApiRecord, courseSlug: string): BasicCourseData {
   const price = normalizeNumberString(apiData.price);
 
-  // PERBAIKAN: Baca dari key "discount" bawaan API
-  const rawDiscount = Number(normalizeNumberString(apiData.discount));
+  // ✨ FIX DISKON HILANG: Baca dari field yang benar sesuai dengan Payload kita
+  const discountNominal = Number(apiData.discount_nominal) || 0;
+  const discountPercent = Number(apiData.discount_percent) || 0;
 
-  // Logika Pintar: Kalau diskon > 100, pasti itu Rupiah (Nominal). Kalau <= 100, itu Persen.
-  const discountMode: DiscountMode = rawDiscount > 100 ? 'nominal' : 'percent';
-  const discountValue = String(rawDiscount);
+  const discountMode: DiscountMode = discountNominal > 0 ? 'nominal' : 'percent';
+  
+  // ✨ FIX UX STANDAR PROFESIONAL: 
+  // Jika nilainya 0, ubah jadi string kosong '' agar form bersih dan Placeholder "0" bisa muncul.
+  const cleanNominal = discountNominal > 0 ? String(discountNominal) : '';
+  const cleanPercent = discountPercent > 0 ? String(discountPercent) : '';
+  const discountValue = discountMode === 'nominal' ? cleanNominal : cleanPercent;
 
   const totalPrice = apiData.total_price
     ? normalizeNumberString(apiData.total_price)
-    : String(calculateTotalPrice(price, discountMode, discountValue));
+    : String(calculateTotalPrice(price, discountMode, discountValue || '0'));
 
   return {
     course_id: apiData.course_id
@@ -167,12 +180,15 @@ function normalizeCourseData(apiData: ApiRecord, courseSlug: string): BasicCours
         : undefined,
     title: typeof apiData.title === 'string' ? apiData.title : '',
     thumbnail: typeof apiData.thumbnail === 'string' ? apiData.thumbnail : '',
-    level: typeof apiData.level === 'string' ? apiData.level : 'Beginner',
+    
+    // ✨ FIX LEVEL: Tangkap ID-nya (entah backend pakai key 'level_id' atau 'level')
+    level_id: apiData.level_id ? Number(apiData.level_id) : (apiData.level ? Number(apiData.level) : 1),
+    level_name: typeof apiData.level_name === 'string' ? apiData.level_name : '', // Dibiarkan fleksibel
+    
     price,
     discount: discountValue,
-    // Tetap simpan state terpisah untuk kebutuhan perhitungan FE
-    discount_nominal: discountMode === 'nominal' ? discountValue : '0',
-    discount_percent: discountMode === 'percent' ? discountValue : '0',
+    discount_nominal: cleanNominal,  // <-- Sekarang masuk ke state form sebagai string kosong
+    discount_percent: cleanPercent,  // <-- Sekarang masuk ke state form sebagai string kosong
     total_price: totalPrice,
     isPublished: apiData.status === 1 || apiData.is_active === true,
     category_id: apiData.category_id ? Number(apiData.category_id) : 1,
@@ -204,11 +220,12 @@ function resolveUploadedThumbnail(result: ThumbnailUpdateResponse | string | nul
 export function useCourseEditor(params: {
   courseSlug: string;
   categories: CourseCategory[];
+  levels: CourseLevel[];
   showToast: ToastFn;
   onUnauthorized: () => void;
   currentOwnerId?: string;
 }) {
-  const { courseSlug, categories, showToast, onUnauthorized, currentOwnerId } = params;
+  const { courseSlug, categories, levels, showToast, onUnauthorized, currentOwnerId } = params;
 
   const [basicData, setBasicData] = useState<BasicCourseData>(defaultBasicData);
   const [initialBasicData, setInitialBasicData] = useState<BasicCourseData>(defaultBasicData);
@@ -337,10 +354,20 @@ export function useCourseEditor(params: {
           next.category_name = selectedCategory?.category_name || prev.category_name;
         }
 
+        if (field === 'level_id') {
+          const selectedLevel = levels.find( // Pastikan parameter 'levels' sudah diterima hook ini
+            (lvl) => String(lvl.level_id) === String(value),
+          );
+          next.level_id = selectedLevel?.level_id || prev.level_id;
+        }
+
         if (field === 'price' || field === 'discount') {
           const nextPrice = field === 'price' ? String(value) : next.price;
           const nextDiscount = field === 'discount' ? String(value) : next.discount;
-          const total = calculateTotalPrice(nextPrice, discountMode, nextDiscount);
+          
+          // ✨ FIX: Sanitasi koma menjadi titik agar mesin kalkulator JS tidak error (NaN)
+          const safeDiscount = nextDiscount.replace(',', '.');
+          const total = calculateTotalPrice(nextPrice, discountMode, safeDiscount);
 
           next.total_price = String(total);
           next.discount_percent = discountMode === 'percent' ? String(nextDiscount) : '';
@@ -350,7 +377,7 @@ export function useCourseEditor(params: {
         return next;
       });
     },
-    [categories, discountMode],
+    [categories, levels, discountMode],
   );
 
   const switchDiscountMode = useCallback((mode: DiscountMode) => {
@@ -377,12 +404,12 @@ export function useCourseEditor(params: {
   const editablePayload = useMemo(
     () => ({
       title: basicData.title,
-      level: basicData.level,
+      level_name: basicData.level_name,
       price: Number(normalizeNumberString(basicData.price)) || 0,
       category_id: basicData.category_id,
       author: basicData.author,
       discount_nominal: Number(normalizeNumberString(basicData.discount_nominal)) || 0,
-      discount_percent: Number(normalizeNumberString(basicData.discount_percent)) || 0,
+      discount_percent: parseFloat(String(basicData.discount_percent).replace(',', '.')) || 0,
       total_price: Number(normalizeNumberString(basicData.total_price)) || 0,
     }),
     [basicData],
@@ -391,12 +418,12 @@ export function useCourseEditor(params: {
   const initialEditablePayload = useMemo(
     () => ({
       title: initialBasicData.title,
-      level: initialBasicData.level,
+      level_name: initialBasicData.level_name,
       price: Number(normalizeNumberString(initialBasicData.price)) || 0,
       category_id: initialBasicData.category_id,
       author: initialBasicData.author,
       discount_nominal: Number(normalizeNumberString(initialBasicData.discount_nominal)) || 0,
-      discount_percent: Number(normalizeNumberString(initialBasicData.discount_percent)) || 0,
+      discount_percent: parseFloat(String(initialBasicData.discount_percent).replace(',', '.')) || 0,
       total_price: Number(normalizeNumberString(initialBasicData.total_price)) || 0,
     }),
     [initialBasicData],
@@ -418,13 +445,13 @@ export function useCourseEditor(params: {
 
       const payload = {
         title: basicData.title.trim(),
-        level: basicData.level,
+        level_id: basicData.level_id,
         price: Number(normalizeNumberString(basicData.price)) || 0,
         category_id: basicData.category_id,
         author: basicData.author,
         discount_nominal: Number(normalizeNumberString(basicData.discount_nominal)) || 0,
-        discount_percent: Number(normalizeNumberString(basicData.discount_percent)) || 0,
         total_price: Number(normalizeNumberString(basicData.total_price)) || 0,
+        discount_percent: parseFloat(String(basicData.discount_percent).replace(',', '.')) || 0,
       };
 
       const response = await fetch(`${BASE_URL}/update/course/${targetCourseId}`, {

@@ -139,22 +139,46 @@ export default function RoadmapTab({
         ? Math.max(...roadmaps.map((step) => step.step_order)) + 1
         : 1;
 
+      // 1. Siapkan payload default yang akan dikirim ke backend
+      const defaultPayload = {
+        course_id: numericCourseId,
+        step_order: nextStepOrder,
+        title: 'Tahap Baru',
+        deskripsi: '<p>Deskripsi tahap pembelajaran.</p>',
+        items: ['Pembukaan Course'],
+      };
+
+      // 2. Tembak API POST untuk menyimpan
       const response = await addCourseRoadmap({
         apiToken,
-        payload: {
-          course_id: numericCourseId,
-          step_order: nextStepOrder,
-          title: 'Tahap Baru',
-          deskripsi: '<p>Deskripsi tahap pembelajaran.</p>',
-          items: ['Pembukaan Course'],
-        },
+        payload: defaultPayload,
       });
 
-      await fetchRoadmaps();
+      // 3. Tangkap ID baru dari respons backend
+      const newRoadmapId = Number(response.data.id);
 
-      const newRoadmapId = Number(response.data?.id);
-      if (Number.isFinite(newRoadmapId)) {
+      if (Number.isFinite(newRoadmapId) && newRoadmapId > 0) {
+        // ✨ SOLUSI PROFESIONAL: Rakit item baru secara lokal
+        const newStep: RoadmapStep = {
+          roadmap_id: newRoadmapId,
+          ...defaultPayload,
+        };
+
+        // 4. SUNTIKKAN LANGSUNG KE STATE UI (Tanpa perlu Fetch ulang!)
+        setRoadmaps((prev) => [...prev, newStep]);
+
+        // 5. Langsung posisikan item baru ini ke mode Edit (Draft)
         setEditingId(newRoadmapId);
+        setDrafts((prev) => ({
+          ...prev,
+          [newRoadmapId]: {
+            ...newStep,
+            items: [...newStep.items],
+          },
+        }));
+      } else {
+        // Fallback: Jika backend aneh dan tidak mengembalikan ID, baru kita paksa Fetch ulang.
+        await fetchRoadmaps();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal menambahkan roadmap.');
@@ -386,55 +410,46 @@ export default function RoadmapTab({
 
                 <div className="flex-1 bg-[#fafafa] dark:bg-[#161616] p-6 md:p-8 rounded-3xl border border-slate-200/60 dark:border-slate-700/60 relative transition-all group-hover:border-cyan-300 dark:group-hover:border-cyan-500/50 group-hover:shadow-[0_8px_30px_rgb(0,188,212,0.05)]">
                   <div className="absolute top-4 right-4 flex items-center gap-1">
-                    {isEditing ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => saveRoadmapStep(step.roadmap_id)}
-                          disabled={currentStep.isSaving}
-                          className="text-slate-400 hover:text-[#00BCD4] hover:bg-cyan-50 dark:hover:bg-cyan-500/10 p-2 rounded-xl transition-all disabled:opacity-60"
-                          title="Simpan Perubahan"
-                        >
-                          <span className="material-symbols-outlined text-[20px] block">
-                            {currentStep.isSaving ? 'progress_activity' : 'save'}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => cancelEdit(step.roadmap_id)}
-                          className="text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 p-2 rounded-xl transition-all"
-                          title="Batal Edit"
-                        >
-                          <span className="material-symbols-outlined text-[20px] block">
-                            close
-                          </span>
-                        </button>
-                      </>
-                    ) : (
+                  {isEditing ? (
+                    <>
+                      {/* ✨ FIX: Tombol Simpan (Save Icon) di atas SINI TELAH DIHAPUS untuk konsistensi */}
+                      
+                      {/* Hanya tersisa Tombol Batal (Close Icon) */}
                       <button
                         type="button"
-                        onClick={() => startEdit(step)}
-                        className="text-slate-400 hover:text-[#00BCD4] hover:bg-cyan-50 dark:hover:bg-cyan-500/10 p-2 rounded-xl transition-all"
-                        title="Edit Roadmap"
+                        onClick={() => cancelEdit(step.roadmap_id)}
+                        className="text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 p-2 rounded-xl transition-all"
+                        title="Batal Edit"
                       >
                         <span className="material-symbols-outlined text-[20px] block">
-                          edit
+                          close
                         </span>
                       </button>
-                    )}
-
+                    </>
+                  ) : (
                     <button
                       type="button"
-                      onClick={() => removeRoadmapStep(step.roadmap_id)}
-                      className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-2 rounded-xl transition-all"
-                      title="Hapus Tahapan"
+                      onClick={() => startEdit(step)}
+                      className="text-slate-400 hover:text-[#00BCD4] hover:bg-cyan-50 dark:hover:bg-cyan-500/10 p-2 rounded-xl transition-all"
+                      title="Edit Roadmap"
                     >
                       <span className="material-symbols-outlined text-[20px] block">
-                        delete
+                        edit
                       </span>
                     </button>
-                  </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => removeRoadmapStep(step.roadmap_id)}
+                    className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-2 rounded-xl transition-all"
+                    title="Hapus Tahapan"
+                  >
+                    <span className="material-symbols-outlined text-[20px] block">
+                      delete
+                    </span>
+                  </button>
+                </div>
 
                   {isEditing ? (
                     <EditRoadmapContent

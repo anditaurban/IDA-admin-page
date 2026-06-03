@@ -125,6 +125,7 @@ function CourseEditorContent() {
   } = useCourseEditor({
     courseSlug,
     categories,
+    levels, 
     showToast,
     onUnauthorized: handleAuthError,
     currentOwnerId: ownerId,

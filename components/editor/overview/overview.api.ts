@@ -97,7 +97,7 @@ export async function addCourseRoadmap(params: {
     {
       method: 'POST',
       headers: buildAuthHeaders(params.apiToken),
-      body: JSON.stringify(params.payload),
+      body: JSON.stringify(params.payload), 
     },
   );
 }

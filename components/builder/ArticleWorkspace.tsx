@@ -11,7 +11,6 @@ interface ArticleWorkspaceProps {
   setTitle: (val: string) => void;
   initialContent: string;
   onContentUpdate?: (html: string) => void;
-  // ✨ FIX 1: Tambahkan title di payload onSave agar API selalu menerima judul terupdate langsung dari input
   onSave: (payload: { content: string; title?: string }) => void;
   onDelete: () => void;
 }
@@ -37,7 +36,6 @@ const MenuBar = ({ editor }: { editor: Editor | null }) => {
     if (!editor) return;
     const handleTransaction = () => setForceUpdate(v => v + 1);
     editor.on('transaction', handleTransaction);
-    // ✨ FIX: Gunakan block {} agar tidak me-return instance Editor (TypeScript akan bahagia)
     return () => { 
        editor.off('transaction', handleTransaction); 
     };
@@ -76,17 +74,26 @@ const MenuBar = ({ editor }: { editor: Editor | null }) => {
   );
 };
 
+// ==========================================
+// KOMPONEN UTAMA ARTICLE WORKSPACE
+// ==========================================
 export default function ArticleWorkspace({ title, setTitle, initialContent, onContentUpdate, onSave, onDelete }: ArticleWorkspaceProps) {
+  // 1. SEMUA HOOKS BERADA DI SINI (Di dalam fungsi ArticleWorkspace)
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // State lokal eksklusif, tidak akan pernah ditimpa oleh prop title dari parent
+  // 2. SINKRONISASI JUDUL (DERIVED STATE)
   const [localTitle, setLocalTitle] = useState(title);
+  const [prevTitleProp, setPrevTitleProp] = useState(title);
+
+  if (title !== prevTitleProp) {
+    setPrevTitleProp(title);
+    setLocalTitle(title);
+  }
   
-  // Ref untuk menampung konten terkini agar tidak memicu infinite loop di useEffect
+  // 3. STATE KONTEN & TEXTAREA
   const contentRef = useRef(initialContent);
-  const [isDirty, setIsDirty] = useState(false); // Detektor ada ketikan baru
-  
+  const [isDirty, setIsDirty] = useState(false); 
   const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
   
   const adjustTextareaHeight = useCallback(() => {
@@ -106,6 +113,7 @@ export default function ArticleWorkspace({ title, setTitle, initialContent, onCo
       cleanContent = ""; 
   }
 
+  // 4. INISIALISASI TIPTAP EDITOR
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -125,37 +133,70 @@ export default function ArticleWorkspace({ title, setTitle, initialContent, onCo
     editorProps: {
       attributes: {
         class: 'prose prose-lg prose-slate dark:prose-invert max-w-none outline-none focus:outline-none min-h-[500px] leading-relaxed ' +
-               '[&>h2]:text-3xl [&>h2]:font-extrabold [&>h2]:text-slate-900 [&>h2]:dark:text-white [&>h2]:mb-6 [&>h2]:mt-10 [&>h2]:tracking-tight ' +
-               '[&>p]:text-slate-600 [&>p]:dark:text-slate-300 [&>p]:mb-5 [&>p]:text-[17px] ' +
-               '[&>pre]:bg-[#0f111a] [&>pre]:text-emerald-400 [&>pre]:p-5 [&>pre]:rounded-2xl [&>pre]:font-mono [&>pre]:text-sm [&>pre]:shadow-xl [&>pre]:border [&>pre]:border-slate-800 ' +
-               '[&>blockquote]:border-l-4 [&>blockquote]:border-[#00BCD4] [&>blockquote]:bg-cyan-50/50 [&>blockquote]:dark:bg-cyan-900/10 [&>blockquote]:p-5 [&>blockquote]:rounded-r-2xl [&>blockquote]:italic [&>blockquote]:text-slate-700 [&>blockquote]:dark:text-slate-300 ' +
-               '[&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] ' +
-               '[&_.is-editor-empty:first-child::before]:text-slate-300 ' +
-               'dark:[&_.is-editor-empty:first-child::before]:text-slate-700 ' +
-               '[&_.is-editor-empty:first-child::before]:float-left ' +
-               '[&_.is-editor-empty:first-child::before]:h-0 ' +
-               '[&_.is-editor-empty:first-child::before]:pointer-events-none',
+                '[&>h2]:text-3xl [&>h2]:font-extrabold [&>h2]:text-slate-900 [&>h2]:dark:text-white [&>h2]:mb-6 [&>h2]:mt-10 [&>h2]:tracking-tight ' +
+                '[&>p]:text-slate-600 [&>p]:dark:text-slate-300 [&>p]:mb-5 [&>p]:text-[17px] ' +
+                '[&>pre]:bg-[#0f111a] [&>pre]:text-emerald-400 [&>pre]:p-5 [&>pre]:rounded-2xl [&>pre]:font-mono [&>pre]:text-sm [&>pre]:shadow-xl [&>pre]:border [&>pre]:border-slate-800 ' +
+                '[&>blockquote]:border-l-4 [&>blockquote]:border-[#00BCD4] [&>blockquote]:bg-cyan-50/50 [&>blockquote]:dark:bg-cyan-900/10 [&>blockquote]:p-5 [&>blockquote]:rounded-r-2xl [&>blockquote]:italic [&>blockquote]:text-slate-700 [&>blockquote]:dark:text-slate-300 ' +
+                '[&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] ' +
+                '[&_.is-editor-empty:first-child::before]:text-slate-300 ' +
+                'dark:[&_.is-editor-empty:first-child::before]:text-slate-700 ' +
+                '[&_.is-editor-empty:first-child::before]:float-left ' +
+                '[&_.is-editor-empty:first-child::before]:h-0 ' +
+                '[&_.is-editor-empty:first-child::before]:pointer-events-none',
       },
     },
   });
+
+  // 5. SINKRONISASI KONTEN EDITOR JIKA BERPINDAH ARTIKEL
+  useEffect(() => {
+    if (editor && initialContent !== undefined) {
+      if (initialContent !== contentRef.current) {
+        let clean = initialContent;
+        if (clean && clean.includes("Mulai ketik materi")) {
+           clean = ""; 
+        }
+        editor.commands.setContent(clean);
+        contentRef.current = clean; 
+      }
+    }
+  }, [editor, initialContent]);
+
+  // 6. FITUR AUTOSAVE DEBOUNCE (2 Detik)
+  useEffect(() => {
+    if (!isDirty) return; 
+
+    const timer = setTimeout(() => {
+      setTitle(localTitle); 
+      onSave({ content: contentRef.current, title: localTitle }); 
+      setIsDirty(false); 
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [localTitle, isDirty, setTitle, onSave]);
+
+
+  // ✨ 7. FITUR PENGAMAN UX: Cegah user menutup/refresh tab jika data belum tersimpan
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        // Standar browser modern untuk memunculkan pop-up konfirmasi
+        e.preventDefault(); 
+        e.returnValue = ''; 
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      // Wajib dibersihkan (cleanup) agar tidak bocor ke halaman lain
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isDirty]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setLocalTitle(e.target.value);
       setIsDirty(true);
   };
-
-  // ✨ FIX 2: Fitur Autosave yang Akurat (Debounce 2 Detik)
-  useEffect(() => {
-    if (!isDirty) return; // Hanya berjalan jika ada ketikan baru
-
-    const timer = setTimeout(() => {
-      setTitle(localTitle); // Sinkron ke parent
-      onSave({ content: contentRef.current, title: localTitle }); // Kirim title eksklusif!
-      setIsDirty(false); // Reset status
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [localTitle, isDirty, setTitle, onSave]);
 
   const handleManualSave = async () => {
     setIsSaving(true);
@@ -165,6 +206,7 @@ export default function ArticleWorkspace({ title, setTitle, initialContent, onCo
     setTimeout(() => setIsSaving(false), 500);
   };
 
+  // 7. RENDER UI
   return (
     <div className="animate-fade-in relative">
       <MenuBar editor={editor} />
