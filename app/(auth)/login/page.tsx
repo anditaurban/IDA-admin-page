@@ -28,6 +28,19 @@ export default function LoginPage() {
 
   const currentYear = new Date().getFullYear();
 
+  // ✨ LOGIC SUBMIT OTOMATIS SAAT ENTER DITEKAN
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault(); // Mencegah reload halaman
+    
+    if (isLoading) return; // Cegah double submit
+
+    if (loginState === "phone") {
+      handleCheckPhone();
+    } else {
+      handleVerifyLogin();
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden bg-white dark:bg-[#0f111a] text-[#121217] dark:text-white font-sans">
       {/* Background Effects */}
@@ -72,7 +85,8 @@ export default function LoginPage() {
             </p>
           </header>
 
-          <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+          {/* ✨ FORM UTAMA MENGGUNAKAN onSubmit */}
+          <form onSubmit={handleFormSubmit} className="space-y-6">
             {/* Error Message */}
             {errorMessage && (
               <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-bold border border-red-100 dark:border-red-500/20 flex items-start gap-3 animate-in shake-in duration-300">
@@ -168,10 +182,9 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Action Button */}
+            {/* ✨ Action Button DIUBAH MENJADI TYPE="SUBMIT" */}
             <button
-              type="button"
-              onClick={loginState === "phone" ? handleCheckPhone : handleVerifyLogin}
+              type="submit"
               disabled={isLoading}
               className={`relative flex w-full items-center justify-center overflow-hidden rounded-2xl h-14 mt-8 text-white font-bold transition-all duration-300 ${
                 isLoading
