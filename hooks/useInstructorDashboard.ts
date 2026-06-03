@@ -15,7 +15,9 @@ export interface CourseItem {
   progress: number;
   batch?: string;
   thumbnail?: string;
-  totalPrice: number; // ✨ TAMBAHAN DATA HARGA
+  price?: number | string; 
+  discount_percent?: number | string; 
+  totalPrice?: number | string;
 }
 
 interface ApiCourseItem {
@@ -27,7 +29,12 @@ interface ApiCourseItem {
   title: string;
   level?: string;
   price?: number;
-  total_price?: number; // ✨ BACA DARI API
+  total_price?: number;
+  
+  // ✨ FIX: Tambahkan dua baris ini agar TypeScript kenal
+  discount_nominal?: number | string;
+  discount_percent?: number | string; 
+  
   thumbnail?: string;
   author?: string;
   rating?: string;
@@ -123,33 +130,34 @@ export function useInstructorDashboard() {
   };
 
   const fetchCourses = useCallback(
-    async (page: number, search: string = '') => {
+    async (
+      page: number, 
+      search: string = '', 
+      categoryId: string = '', 
+      levelId: string = ''
+    ) => {
       if (isAuthChecking) return;
       setIsLoading(true);
 
       try {
-        // ✨ FIX: Validasi yang lebih elegan (Jangan gunakan throw)
-        if (!BASE_URL) {
-          console.error('API Base URL belum disetting di environment (.env)');
-          return; // Keluar dari fungsi diam-diam tanpa merusak aplikasi
-        }
-
-        if (!activeUserId) {
-
-          return; 
-        }
+        if (!BASE_URL) return;
+        if (!activeUserId) return;
 
         const activeToken = getActiveToken();
         const headers: HeadersInit = { Accept: 'application/json', 'Content-Type': 'application/json' };
-
         if (activeToken) headers.Authorization = `Bearer ${activeToken}`;
 
-        const limitParam = 'limit=12&per_page=12'; 
+        // 1. Susun Parameter Query secara dinamis
+        const params = new URLSearchParams();
+        params.append('limit', '12');
+        params.append('per_page', '12');
+        
+        if (search.trim()) params.append('search', search.trim());
+        if (categoryId) params.append('category_id', categoryId);
+        if (levelId) params.append('level_id', levelId);
 
-        // ✨ 1. URL BARU: Langsung tembak ke <<baseUrl>>/table/course/<<userId>>/<<currentPage>>
-        const endpoint = search
-          ? `${BASE_URL}/table/course/${activeUserId}/${page}?search=${encodeURIComponent(search)}&${limitParam}`
-          : `${BASE_URL}/table/course/${activeUserId}/${page}?${limitParam}`;
+        // 2. Tembak ke endpoint dengan query params gabungan
+        const endpoint = `${BASE_URL}/table/course/${activeUserId}/${page}?${params.toString()}`;
 
         const response = await fetch(endpoint, { method: 'GET', headers });
 
@@ -163,17 +171,12 @@ export function useInstructorDashboard() {
         const data = await response.json();
         const rawTableData = Array.isArray(data.tableData) ? data.tableData : [];
 
-        // ✨ 2. FORMAT DATA (Langsung proses, tanpa perlu di-filter lagi karena backend sudah pintar)
         const formattedData: CourseItem[] = rawTableData.map((item: ApiCourseItem) => {
           let displayThumb = item.thumbnail || '';
-          
-          if (displayThumb) {
-            if (!displayThumb.startsWith('http') && !displayThumb.startsWith('bg-') && !displayThumb.startsWith('data:')) {
-              const filename = displayThumb.split('/').pop(); 
-              displayThumb = `${BASE_URL}/thumbnail/course/${filename}`;
-            }
+          if (displayThumb && !displayThumb.startsWith('http') && !displayThumb.startsWith('bg-') && !displayThumb.startsWith('data:')) {
+            const filename = displayThumb.split('/').pop(); 
+            displayThumb = `${BASE_URL}/thumbnail/course/${filename}`;
           }
-
           const finalPrice = Number(item.total_price) || Number(item.price) || 0;
           const dateToUse = item.updated_at || item.created_at;
 
@@ -181,21 +184,22 @@ export function useInstructorDashboard() {
             id: item.course_id,
             slug: String(item.course_id),
             title: item.title,
-            status: 'Published',
+            status: 'Published', // Sesuaikan jika API mengirimkan status asli
             students: item.students || 0,
             lastUpdated: formatSimpleDate(dateToUse),
             progress: item.progress || 100,
             batch: item.category_name || 'Umum',
             thumbnail: displayThumb,
+            price: item.price,
+            discount_percent: item.discount_percent,
             totalPrice: finalPrice,
           };
         });
 
-        // ✨ 3. SINKRONISASI KE STATE (Langsung comot dari JSON Backend)
         setCourses(formattedData);
-        setTotalItems(data.totalRecords || 0); // Otomatis dapat angka 12, 8, dsb
-        setTotalPages(data.totalPages || 1);   // Otomatis dapat jumlah halamannya
-        setCurrentPage(data.currentPage || page); // Pastikan halaman sinkron
+        setTotalItems(data.totalRecords || 0);
+        setTotalPages(data.totalPages || 1); 
+        setCurrentPage(data.currentPage || page); 
 
       } catch (error) {
         console.error('Gagal memuat data kelas:', error);
@@ -207,15 +211,8 @@ export function useInstructorDashboard() {
         setIsLoading(false);
       }
     },
-    // Pastikan activeUserId ada di dalam array dependency ini
     [BASE_URL, activeUserId, getActiveToken, isAuthChecking, performLogout, showToast] 
   );
-
-  useEffect(() => {
-    if (isAuthChecking || !activeOwnerId) return;
-    const timer = setTimeout(() => fetchCourses(1, searchQuery), 500);
-    return () => clearTimeout(timer);
-  }, [searchQuery, fetchCourses, isAuthChecking, activeOwnerId]);
 
   const getDisplayName = useCallback(() => {
     if (!userProfile) return 'Instruktur';

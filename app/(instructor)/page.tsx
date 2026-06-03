@@ -1,12 +1,16 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { DM_Sans } from 'next/font/google';
 
 import CreateCourseModal from '@/components/modal/CreateCourseModal';
 import CourseCard from '@/components/dashboard/CourseCard';
 import { useInstructorDashboard } from '@/hooks/useInstructorDashboard';
+
+// ✨ FIX: Import Hooks untuk Filter Kategori dan Level
+import { useCourseCategories } from '@/hooks/useCourseCategories';
+import { useCourseLevels } from '@/hooks/useCourseLevels';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
 
@@ -23,11 +27,9 @@ export default function InstructorDashboardContent() {
   const {
     courses,
     isLoading,
-    searchQuery,
-    setSearchQuery,
     currentPage,
     totalPages,
-    totalItems, // ✨ AMBIL DATA JUMLAH KELAS
+    totalItems,
     fetchCourses,
     isAddModalOpen,
     setIsAddModalOpen,
@@ -35,6 +37,32 @@ export default function InstructorDashboardContent() {
     getDisplayName,
     isAuthChecking,
   } = useInstructorDashboard();
+
+  // ✨ STATE LOKAL UNTUK FILTER & PENCARIAN
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [levelFilter, setLevelFilter] = useState("");
+
+  // ✨ AMBIL DATA MASTER (Kategori & Level)
+  const { categories } = useCourseCategories({ ownerId: activeOwnerId });
+  const { levels } = useCourseLevels({ ownerId: String(activeOwnerId) });
+
+  // ✨ LOGIKA DEBOUNCE KHUSUS PENCARIAN (Cegah Spam API)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // ✨ LOGIKA TRIGGER FETCH API (Jalan Otomatis saat Filter Berubah)
+  useEffect(() => {
+    if (activeOwnerId && !isAuthChecking) {
+      // Selalu tembak ke halaman 1 setiap kali filter/pencarian berubah
+      fetchCourses(1, debouncedSearch, categoryFilter, levelFilter);
+    }
+  }, [debouncedSearch, categoryFilter, levelFilter, activeOwnerId, isAuthChecking, fetchCourses]);
 
   if (isAuthChecking) {
     return (
@@ -69,7 +97,6 @@ export default function InstructorDashboardContent() {
           {instructorStats.map((stat, index) => (
             <div 
               key={stat.id} 
-              // ✨ UX: Item ke-3 (index 2) akan span 2 kolom di mobile agar layout tidak bolong
               className={`bg-white dark:bg-[#111111] p-4 md:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 md:gap-5 hover:-translate-y-1 transition-transform duration-300 ${
                 index === 2 ? 'col-span-2 md:col-span-1' : 'col-span-1'
               }`}
@@ -87,10 +114,9 @@ export default function InstructorDashboardContent() {
 
         {/* KELOLA KELAS */}
         <div className="flex flex-col gap-6 mt-4">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between border-b border-slate-200 dark:border-slate-800 pb-4 gap-4">
+          <div className="flex flex-col border-b border-slate-200 dark:border-slate-800 pb-6 gap-6">
             
-            {/* ✨ UX: Judul dan Resume Jumlah Kelas digabung agar terbaca runut */}
-            {/* ✨ UX: Judul dan Resume Jumlah Kelas digabung agar terbaca runut */}
+            {/* Header Title */}
             <div>
               <h2 className={`text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 ${googleSansAlt.className}`}>
                 <span className="material-symbols-outlined text-[#00BCD4]">school</span> Kelola Kelas Anda
@@ -101,19 +127,6 @@ export default function InstructorDashboardContent() {
                 </p>
               )}
             </div>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="flex-1 sm:flex-none flex items-center bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-[#00BCD4]/50 transition-all">
-                <span className="material-symbols-outlined text-slate-400 text-[18px]">search</span>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari nama kelas..."
-                  className="bg-transparent border-none focus:ring-0 text-sm w-full sm:w-48 ml-2 outline-none dark:text-white"
-                />
-              </div>
-            </div>
           </div>
 
           {isLoading ? (
@@ -123,25 +136,26 @@ export default function InstructorDashboardContent() {
             </div>
           ) : (
             <>
-              {/* ✨ KELAS (Tampil 2 Card di Mobile, 3 di Desktop) */}
+              {/* KELAS */}
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 md:gap-6">
                 {courses.length === 0 ? (
                   <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
-                    <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">inbox</span>
-                    <p className="text-slate-500 font-medium text-sm md:text-base">Tidak ada kelas yang ditemukan untuk akun ini.</p>
+                    <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">search_off</span>
+                    <p className="text-slate-500 font-medium text-sm md:text-base">Tidak ada kelas yang sesuai dengan filter Anda.</p>
                   </div>
                 ) : (
                   courses.map((course) => <CourseCard key={course.id} course={course} />)
                 )}
               </div>
 
+              {/* PAGINATION */}
               {totalPages > 1 && (
                 <div className="mt-8 flex items-center justify-center gap-2 sm:gap-3">
                   
                   {/* ⏪ Tombol Ke Halaman Pertama */}
                   <button
                     disabled={currentPage <= 1}
-                    onClick={() => fetchCourses(1, searchQuery)}
+                    onClick={() => fetchCourses(1, debouncedSearch, categoryFilter, levelFilter)}
                     title="Ke Halaman Pertama"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -151,14 +165,14 @@ export default function InstructorDashboardContent() {
                   {/* ◀️ Tombol Sebelumnya (Prev) */}
                   <button
                     disabled={currentPage <= 1}
-                    onClick={() => fetchCourses(currentPage - 1, searchQuery)}
+                    onClick={() => fetchCourses(currentPage - 1, debouncedSearch, categoryFilter, levelFilter)}
                     title="Halaman Sebelumnya"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <span className="material-symbols-outlined text-sm block">chevron_left</span>
                   </button>
 
-                  {/* 🔢 Indikator Halaman (Dipercantik) */}
+                  {/* 🔢 Indikator Halaman */}
                   <div className="px-4 py-2 rounded-xl bg-white dark:bg-[#0a0a0a] border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-2">
                     <span className="text-sm font-bold text-slate-600 dark:text-slate-400">
                       Hal <span className="text-[#00BCD4]">{currentPage}</span> dari {totalPages}
@@ -168,7 +182,7 @@ export default function InstructorDashboardContent() {
                   {/* ▶️ Tombol Berikutnya (Next) */}
                   <button
                     disabled={currentPage >= totalPages}
-                    onClick={() => fetchCourses(currentPage + 1, searchQuery)}
+                    onClick={() => fetchCourses(currentPage + 1, debouncedSearch, categoryFilter, levelFilter)}
                     title="Halaman Berikutnya"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -178,7 +192,7 @@ export default function InstructorDashboardContent() {
                   {/* ⏩ Tombol Ke Halaman Terakhir */}
                   <button
                     disabled={currentPage >= totalPages}
-                    onClick={() => fetchCourses(totalPages, searchQuery)}
+                    onClick={() => fetchCourses(totalPages, debouncedSearch, categoryFilter, levelFilter)}
                     title="Ke Halaman Terakhir"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >

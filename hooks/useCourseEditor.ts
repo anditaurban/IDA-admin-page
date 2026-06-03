@@ -361,23 +361,63 @@ export function useCourseEditor(params: {
           next.level_id = selectedLevel?.level_id || prev.level_id;
         }
 
-        if (field === 'price' || field === 'discount') {
-          const nextPrice = field === 'price' ? String(value) : next.price;
-          const nextDiscount = field === 'discount' ? String(value) : next.discount;
-          
-          // ✨ FIX: Sanitasi koma menjadi titik agar mesin kalkulator JS tidak error (NaN)
-          const safeDiscount = nextDiscount.replace(',', '.');
-          const total = calculateTotalPrice(nextPrice, discountMode, safeDiscount);
+        // ✨ FIX LOGIKA PROFESIONAL: Auto-Sync Harga, Diskon Nominal, dan Diskon Persen
+        if (field === 'price' || field === 'discount_percent' || field === 'discount_nominal') {
+          // 1. Ambil inputan user yang paling baru
+          const rawPrice = field === 'price' ? String(value) : (prev.price || '');
+          const rawPercent = field === 'discount_percent' ? String(value) : (prev.discount_percent || '');
+          const rawNominal = field === 'discount_nominal' ? String(value) : (prev.discount_nominal || '');
 
-          next.total_price = String(total);
-          next.discount_percent = discountMode === 'percent' ? String(nextDiscount) : '';
-          next.discount_nominal = discountMode === 'nominal' ? String(nextDiscount) : '';
+          // 2. Bersihkan Harga (P) agar bisa dihitung mesin
+          const p = Number(normalizeNumberString(rawPrice)) || 0;
+          
+          let calcNominal = 0;
+          let calcPercent = 0;
+
+          // SKENARIO A: Instruktur mengetik di kolom PERSEN
+          if (field === 'discount_percent') {
+            const safePercentStr = rawPercent.replace(',', '.'); // Sanitasi koma
+            calcPercent = parseFloat(safePercentStr) || 0;
+            
+            // Hitung otomatis Nominalnya (Dibulatkan agar tidak ada harga pecahan rupiah)
+            calcNominal = Math.round(p * (calcPercent / 100)); 
+
+            next.discount_percent = rawPercent; // Biarkan input user apa adanya (misal "50,5")
+            next.discount_nominal = calcNominal > 0 ? String(calcNominal) : '';
+          } 
+          
+          // SKENARIO B: Instruktur mengetik di kolom NOMINAL (Rupiah)
+          else if (field === 'discount_nominal') {
+            calcNominal = Number(normalizeNumberString(rawNominal)) || 0;
+            
+            // Hitung otomatis Persennya (Dibulatkan max 2 desimal, cegah error dibagi 0)
+            calcPercent = p > 0 ? Number(((calcNominal / p) * 100).toFixed(2)) : 0;
+
+            next.discount_nominal = rawNominal; // Biarkan format ketikan user
+            next.discount_percent = calcPercent > 0 ? String(calcPercent).replace('.', ',') : '';
+          } 
+          
+          // SKENARIO C: Instruktur merubah HARGA UTAMA (Price)
+          else if (field === 'price') {
+            // Jika harga berubah, patokan utamanya adalah Persen yang sudah ada
+            const safePercentStr = String(prev.discount_percent || '').replace(',', '.');
+            calcPercent = parseFloat(safePercentStr) || 0;
+            calcNominal = Math.round(p * (calcPercent / 100));
+
+            next.price = rawPrice;
+            // Persen tetap, tapi Nominal dihitung ulang berdasarkan harga baru
+            next.discount_nominal = calcNominal > 0 ? String(calcNominal) : '';
+          }
+
+          // 3. Kalkulasi TOTAL HARGA (T = P - Dn)
+          const total = Math.max(0, p - calcNominal); // Cegah harga minus
+          next.total_price = total > 0 ? String(total) : '';
         }
 
         return next;
       });
     },
-    [categories, levels, discountMode],
+    [categories, levels],
   );
 
   const switchDiscountMode = useCallback((mode: DiscountMode) => {
@@ -441,20 +481,35 @@ export function useCourseEditor(params: {
       const token = getActiveToken();
       if (!token) throw new Error('Token API tidak tersedia.');
 
+      // Di dalam fungsi saveCourseChanges()
+
       const targetCourseId = basicData.course_id || courseSlug;
 
+      // ✨ FIX: 1. Bersihkan Harga dan Diskon terlebih dahulu
+      const cleanPrice = Number(normalizeNumberString(basicData.price)) || 0;
+      const cleanNominal = Number(normalizeNumberString(basicData.discount_nominal)) || 0;
+      
+      // ✨ FIX: 2. Kalkulasi ulang Total Price secara mutlak (Cegah Harga Minus)
+      const finalTotalPrice = Math.max(0, cleanPrice - cleanNominal);
+
+      // 3. Masukkan ke dalam Payload
       const payload = {
         title: basicData.title.trim(),
         level_id: basicData.level_id,
-        price: Number(normalizeNumberString(basicData.price)) || 0,
         category_id: basicData.category_id,
         author: basicData.author,
-        discount_nominal: Number(normalizeNumberString(basicData.discount_nominal)) || 0,
-        total_price: Number(normalizeNumberString(basicData.total_price)) || 0,
+        
+        // Data Harga yang dijamin 100% akurat
+        price: cleanPrice,
+        discount_nominal: cleanNominal,
         discount_percent: parseFloat(String(basicData.discount_percent).replace(',', '.')) || 0,
+        
+        // ✨ FIX: 3. Tembak hasil kalkulasi mutlak ini ke backend!
+        total_price: finalTotalPrice, 
       };
 
       const response = await fetch(`${BASE_URL}/update/course/${targetCourseId}`, {
+
         method: 'PUT',
         headers: buildJsonHeaders(token),
         body: JSON.stringify(payload),

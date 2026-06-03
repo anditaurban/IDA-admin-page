@@ -138,6 +138,8 @@ export default function CourseCard({
     }
   };
 
+  const rawPrice = Number(extendedCourse.price || 0);
+  const rawDiscountPercent = Number(extendedCourse.discount_percent || 0);
   const actualTotalPrice = Number(extendedCourse.total_price ?? course.totalPrice ?? 0);
   const formatRupiah = (angka: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -148,6 +150,8 @@ export default function CourseCard({
     }).format(angka);
   };
   const displayPrice = actualTotalPrice > 0 ? formatRupiah(actualTotalPrice) : "Gratis";
+
+  const isDiscountActive = rawPrice > actualTotalPrice && rawPrice > 0;
 
   const DeleteModal = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4">
@@ -321,40 +325,71 @@ export default function CourseCard({
         </div>
 
         {/* CONTENT INFO */}
-        <div className="p-6 flex flex-col flex-1">
+        <div className="p-5 sm:p-6 flex flex-col flex-1">
+          
+          {/* 1. JUDUL KELAS: Ditambah min-h-[48px] agar tinggi kartu selalu sama walau judul hanya 1 baris */}
           <h3
-            className={`text-lg font-bold text-slate-900 dark:text-white leading-snug mb-3 group-hover:text-[#00BCD4] transition-colors line-clamp-2 ${googleSansAlt.className}`}
+            title={course.title}
+            className={`text-[17px] font-bold text-slate-900 dark:text-white leading-snug mb-3 group-hover:text-[#00BCD4] transition-colors line-clamp-2 min-h-12 ${googleSansAlt.className}`}
           >
             {course.title}
           </h3>
-          <div className="mb-4 flex flex-col">
-            {Number(extendedCourse.price) > actualTotalPrice && (
-              <span className="text-xs text-slate-400 line-through">
-                {formatRupiah(Number(extendedCourse.price))}
+
+          {/* 2. AREA HARGA: Diberi gap rapat dan flex-wrap agar tidak jebol ke samping */}
+          <div className="flex flex-col gap-1 mb-5">
+            {isDiscountActive ? (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Harga Asli Dicoret */}
+                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 line-through decoration-slate-400/60">
+                    {formatRupiah(rawPrice)}
+                  </span>
+                  
+                  {/* Persentase Diskon */}
+                  {rawDiscountPercent > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 tracking-tight">
+                      {rawDiscountPercent % 1 !== 0 
+                        ? rawDiscountPercent.toFixed(1) 
+                        : rawDiscountPercent}% OFF
+                    </span>
+                  )}
+                </div>
+                {/* Harga Final */}
+                <span className="text-[18px] font-black text-emerald-600 dark:text-emerald-400 leading-none mt-0.5">
+                  {displayPrice}
+                </span>
+              </>
+            ) : (
+              // Jika tidak ada diskon / Gratis Murni
+              <span className={`text-[18px] font-black leading-none mt-5 ${actualTotalPrice === 0 ? "text-emerald-500" : "text-emerald-600 dark:text-emerald-400"}`}>
+                {displayPrice}
               </span>
             )}
-            <span className={`text-[18px] font-black ${actualTotalPrice === 0 ? "text-emerald-500" : "text-emerald-600 dark:text-emerald-400"}`}>
-              {actualTotalPrice > 0 ? displayPrice : "GRATIS"}
-            </span>
           </div>
-          <div className="mt-auto space-y-4">
-            <div className="flex items-center justify-between text-sm">
+
+          {/* 3. AREA BAWAH (Statistik & Tombol): Diberi mt-auto agar selalu menempel kuat di dasar kartu */}
+          <div className="mt-auto flex flex-col gap-4">
+            <div className="flex items-center justify-between text-[13px]">
               <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
-                <span className="material-symbols-outlined text-[18px]">group</span> {course.students} Siswa
+                <span className="material-symbols-outlined text-[16px]">group</span> 
+                <span>{course.students} Siswa</span>
               </div>
-              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium text-xs">
-                <span className="material-symbols-outlined text-[16px]">calendar_today</span> {course.lastUpdated}
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
+                <span className="material-symbols-outlined text-[16px]">calendar_today</span> 
+                <span>{course.lastUpdated}</span>
               </div>
             </div>
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+            
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
               <Link
                 href={`/course-editor?course=${course.id}`}
-                className={`flex-1 flex justify-center items-center gap-2 px-4 py-2.5 bg-[#00BCD4]/10 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white rounded-xl text-sm font-bold transition-all border border-[#00BCD4]/20 hover:border-[#00BCD4] active:scale-95 ${googleSansAlt.className}`}
+                className={`w-full flex justify-center items-center gap-2 px-4 py-2.5 bg-cyan-50 hover:bg-[#00BCD4] text-[#00BCD4] hover:text-white dark:bg-cyan-500/10 dark:hover:bg-[#00BCD4] rounded-xl text-sm font-bold transition-all border border-cyan-100 dark:border-cyan-500/20 hover:border-transparent active:scale-[0.98] ${googleSansAlt.className}`}
               >
                 <span className="material-symbols-outlined text-[18px]">edit</span> Edit Kelas
               </Link>
             </div>
           </div>
+          
         </div>
       </div>
       {isMounted && isDeleteModalOpen && createPortal(<DeleteModal />, document.body)}

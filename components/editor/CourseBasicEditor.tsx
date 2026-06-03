@@ -186,12 +186,6 @@ export default function CourseBasicEditor({
         ? genericDiscount
         : 0;
 
-  // ✨ KEMBALIKAN VARIABEL YANG HILANG
-  const currentEditDiscount =
-    discountMode === "percent"
-      ? String(displayPercent)
-      : String(displayNominal);
-
   const currentModeForCalc = isEditing
     ? discountMode
     : displayPercent > 0
@@ -594,26 +588,29 @@ export default function CourseBasicEditor({
                       inputMode={
                         discountMode === "percent" ? "decimal" : "numeric"
                       }
+                      // ✨ FIX: Langsung baca dari basicData agar sinkron 100%
                       value={
                         discountMode === "percent"
-                          ? localPercentInput
-                          : !currentEditDiscount || currentEditDiscount === "0"
-                            ? ""
-                            : formatRibuan(currentEditDiscount)
+                          ? basicData.discount_percent || ""
+                          : formatRibuan(basicData.discount_nominal || "")
                       }
                       onChange={(e) => {
                         if (discountMode === "percent") {
+                          // Sanitasi Input Persen (Boleh Koma, Maks 100)
                           let val = e.target.value
                             .replace(/,/g, ".")
                             .replace(/[^0-9.]/g, "");
+                          
                           const parts = val.split(".");
                           if (parts.length > 2)
                             val = parts[0] + "." + parts.slice(1).join("");
                           if (Number(val) > 100) val = "100";
 
-                          setLocalPercentInput(val);
-                          onChange("discount_percent", val);
+                          // Kembalikan ke format Koma untuk Tampilan Lokal Indonesia
+                          const localFormat = val.replace(".", ",");
+                          onChange("discount_percent", localFormat);
                         } else {
+                          // Sanitasi Input Nominal (Hanya Angka)
                           const val = normalizeNumberString(e.target.value);
                           onChange("discount_nominal", val);
                         }
@@ -627,17 +624,18 @@ export default function CourseBasicEditor({
                       </span>
                     )}
                   </div>
+            
                 ) : (
                   <div className="flex items-center">
-                    {displayPercent > 0 || displayNominal > 0 ? (
+                    {/* ✨ FIX: Pengecekan Aman (Type-Safe). Cek apakah Persen > 0 ATAU Nominal > 0 */}
+                    {parseFloat(String(basicData.discount_percent || "0").replace(",", ".")) > 0 || 
+                     Number(normalizeNumberString(String(basicData.discount_nominal || "0"))) > 0 ? (
                       <div className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-md px-2 py-1 shadow-sm">
                         <span className="material-symbols-outlined text-[14px] text-rose-500">
                           sell
                         </span>
                         <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
-                          {displayPercent > 0
-                            ? `${displayPercent}%`
-                            : `Rp${formatRibuan(displayNominal)}`}
+                          {basicData.discount_percent}% (Rp{formatRibuan(String(basicData.discount_nominal || "0"))})
                         </span>
                       </div>
                     ) : (
