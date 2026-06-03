@@ -1,16 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { DM_Sans } from 'next/font/google';
 
 import CreateCourseModal from '@/components/modal/CreateCourseModal';
 import CourseCard from '@/components/dashboard/CourseCard';
 import { useInstructorDashboard } from '@/hooks/useInstructorDashboard';
-
-// ✨ FIX: Import Hooks untuk Filter Kategori dan Level
-import { useCourseCategories } from '@/hooks/useCourseCategories';
-import { useCourseLevels } from '@/hooks/useCourseLevels';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
 
@@ -38,31 +34,13 @@ export default function InstructorDashboardContent() {
     isAuthChecking,
   } = useInstructorDashboard();
 
-  // ✨ STATE LOKAL UNTUK FILTER & PENCARIAN
-  const [searchInput, setSearchInput] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [levelFilter, setLevelFilter] = useState("");
-
-  // ✨ AMBIL DATA MASTER (Kategori & Level)
-  const { categories } = useCourseCategories({ ownerId: activeOwnerId });
-  const { levels } = useCourseLevels({ ownerId: String(activeOwnerId) });
-
-  // ✨ LOGIKA DEBOUNCE KHUSUS PENCARIAN (Cegah Spam API)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchInput);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
-  // ✨ LOGIKA TRIGGER FETCH API (Jalan Otomatis saat Filter Berubah)
+  // ✨ LOGIKA TRIGGER FETCH API (Jalan Otomatis saat Halaman Dimuat)
+  // Karena tidak ada filter, kita panggil API kosong (page 1) langsung saat auth selesai
   useEffect(() => {
     if (activeOwnerId && !isAuthChecking) {
-      // Selalu tembak ke halaman 1 setiap kali filter/pencarian berubah
-      fetchCourses(1, debouncedSearch, categoryFilter, levelFilter);
+      fetchCourses(1, "", "", "");
     }
-  }, [debouncedSearch, categoryFilter, levelFilter, activeOwnerId, isAuthChecking, fetchCourses]);
+  }, [activeOwnerId, isAuthChecking, fetchCourses]);
 
   if (isAuthChecking) {
     return (
@@ -141,7 +119,7 @@ export default function InstructorDashboardContent() {
                 {courses.length === 0 ? (
                   <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
                     <span className="material-symbols-outlined text-4xl text-slate-300 mb-2">search_off</span>
-                    <p className="text-slate-500 font-medium text-sm md:text-base">Tidak ada kelas yang sesuai dengan filter Anda.</p>
+                    <p className="text-slate-500 font-medium text-sm md:text-base">Anda belum memiliki kelas.</p>
                   </div>
                 ) : (
                   courses.map((course) => <CourseCard key={course.id} course={course} />)
@@ -155,7 +133,7 @@ export default function InstructorDashboardContent() {
                   {/* ⏪ Tombol Ke Halaman Pertama */}
                   <button
                     disabled={currentPage <= 1}
-                    onClick={() => fetchCourses(1, debouncedSearch, categoryFilter, levelFilter)}
+                    onClick={() => fetchCourses(1, "", "", "")}
                     title="Ke Halaman Pertama"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -165,7 +143,7 @@ export default function InstructorDashboardContent() {
                   {/* ◀️ Tombol Sebelumnya (Prev) */}
                   <button
                     disabled={currentPage <= 1}
-                    onClick={() => fetchCourses(currentPage - 1, debouncedSearch, categoryFilter, levelFilter)}
+                    onClick={() => fetchCourses(currentPage - 1, "", "", "")}
                     title="Halaman Sebelumnya"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -182,7 +160,7 @@ export default function InstructorDashboardContent() {
                   {/* ▶️ Tombol Berikutnya (Next) */}
                   <button
                     disabled={currentPage >= totalPages}
-                    onClick={() => fetchCourses(currentPage + 1, debouncedSearch, categoryFilter, levelFilter)}
+                    onClick={() => fetchCourses(currentPage + 1, "", "", "")}
                     title="Halaman Berikutnya"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -192,7 +170,7 @@ export default function InstructorDashboardContent() {
                   {/* ⏩ Tombol Ke Halaman Terakhir */}
                   <button
                     disabled={currentPage >= totalPages}
-                    onClick={() => fetchCourses(totalPages, debouncedSearch, categoryFilter, levelFilter)}
+                    onClick={() => fetchCourses(totalPages, "", "", "")}
                     title="Ke Halaman Terakhir"
                     className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >

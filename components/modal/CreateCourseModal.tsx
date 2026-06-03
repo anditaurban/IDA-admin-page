@@ -73,7 +73,6 @@ function buildAuthHeaders(token?: string): HeadersInit {
   return headers;
 }
 
-// Filter duplikat berdasarkan nama agar tidak ada kategori ganda
 function dedupeCategories(categories: CourseCategory[]) {
   const categoryMap = new Map<string, CourseCategory>();
   categories.forEach((category) => {
@@ -107,10 +106,14 @@ export default function CreateCourseModal({
 
   const [title, setTitle] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [levelId, setLevelId] = useState(''); // ✨ FIX: Menggunakan levelId
-  const [price, setPrice] = useState('');
+  const [levelId, setLevelId] = useState('');
 
-  // States: Dropdown Data
+  // ✨ STATE: Harga & Diskon Profesional
+  const [price, setPrice] = useState('');
+  const [discountPercent, setDiscountPercent] = useState('');
+  const [discountNominal, setDiscountNominal] = useState('');
+  const [discountMode, setDiscountMode] = useState<'percent' | 'nominal'>('percent');
+
   const [categories, setCategories] = useState<CourseCategory[]>([]);
   const [isCategoryLoading, setIsCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
@@ -137,10 +140,12 @@ export default function CreateCourseModal({
     if (isOpen) {
       setTitle('');
       setPrice('');
+      setDiscountPercent('');
+      setDiscountNominal('');
+      setDiscountMode('percent');
     }
   }, [isOpen]);
 
-  // Fetch Kategori & Level secara bersamaan
   useEffect(() => {
     if (!isOpen) return;
 
@@ -159,7 +164,6 @@ export default function CreateCourseModal({
         const token = Cookies.get('api_token') || process.env.NEXT_PUBLIC_API_TOKEN || '';
         const headers = buildAuthHeaders(token);
 
-        // 1. Fetch Categories menggunakan /list agar terbawa semua
         const catResponse = await fetch(`${BASE_URL}/list/course_category/${cleanOwnerId}`, {
           method: 'GET',
           headers,
@@ -184,7 +188,6 @@ export default function CreateCourseModal({
           }
         }
 
-        // 2. Fetch Levels 
         const lvlResponse = await fetch(`${BASE_URL}/list/course_level/${cleanOwnerId}`, {
           method: 'GET',
           headers,
@@ -196,7 +199,6 @@ export default function CreateCourseModal({
           setLevels(fetchedLevels);
           
           if (fetchedLevels.length > 0) {
-            // ✨ FIX: Set state levelId dengan ID dari API
             setLevelId((prev) => {
               const isPrevStillAvailable = fetchedLevels.some((l: CourseLevel) => String(l.level_id) === prev);
               return isPrevStillAvailable ? prev : String(fetchedLevels[0].level_id);
@@ -226,9 +228,63 @@ export default function CreateCourseModal({
     onClose();
   };
 
+  // ✨ FIX: Logika Kalkulasi Harga & Diskon Real-Time
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value.replace(/\D/g, '');
+    const p = Number(rawVal) || 0;
+    
+    setPrice(rawVal);
+
+    // Pertahankan persen, hitung ulang nominal
+    const safePercentStr = String(discountPercent || '').replace(',', '.');
+    const calcPercent = parseFloat(safePercentStr) || 0;
+    const calcNominal = Math.round(p * (calcPercent / 100));
+
+    setDiscountNominal(calcNominal > 0 ? String(calcNominal) : '');
+  };
+
+  const handleDiscountPercentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+    const parts = val.split('.');
+    if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+    if (Number(val) > 100) val = '100';
+
+    const localFormat = val.replace('.', ',');
+    setDiscountPercent(localFormat);
+
+    const p = Number(price) || 0;
+    const calcPercent = parseFloat(val) || 0;
+    const calcNominal = Math.round(p * (calcPercent / 100));
+    setDiscountNominal(calcNominal > 0 ? String(calcNominal) : '');
+  };
+
+  const handleDiscountNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, '');
-    setPrice(val);
+    setDiscountNominal(val);
+
+    const p = Number(price) || 0;
+    const calcNominal = Number(val) || 0;
+    
+    // Cegah error dibagi 0
+    const calcPercent = p > 0 ? Number(((calcNominal / p) * 100).toFixed(2)) : 0;
+    setDiscountPercent(calcPercent > 0 ? String(calcPercent).replace('.', ',') : '');
+  };
+
+  // Kalkulasi Total Harga Akhir
+  const numericPrice = Number(price || 0);
+  const numericDiscountNominal = Number(discountNominal || 0);
+  const numericDiscountPercent = parseFloat(String(discountPercent || '0').replace(',', '.')) || 0;
+  
+  // Total harga tidak boleh minus
+  const finalTotalPrice = Math.max(0, numericPrice - numericDiscountNominal);
+
+  const formatRupiah = (angka: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(angka);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -240,7 +296,6 @@ export default function CreateCourseModal({
     const cleanOwnerId = String(ownerId || '').trim();
     const cleanUserId = getResolvedUserId(userId);
     const cleanAuthorName = getResolvedAuthorName(authorName);
-    const numericPrice = Number(price || 0);
 
     if (!BASE_URL) return showToast('error', 'Base URL API belum diset.');
     if (!cleanOwnerId) return showToast('error', 'Owner ID tidak ditemukan.');
@@ -258,13 +313,15 @@ export default function CreateCourseModal({
       formData.append('owner_id', cleanOwnerId);
       formData.append('user_id', cleanUserId); 
       formData.append('category_id', cleanCategoryId);
-      formData.append('level_id', cleanLevelId); // ✨ FIX: Mengirim level_id persis sesuai permintaan SQL
+      formData.append('level_id', cleanLevelId);
       formData.append('title', cleanTitle);
-      formData.append('price', String(numericPrice));
-      formData.append('total_price', String(numericPrice));
       formData.append('author', cleanAuthorName);
       
-      // Thumbnail dihapus karena tidak wajib di awal (quick create)
+      // ✨ FIX: Payload Harga, Diskon, dan Harga Akhir
+      formData.append('price', String(numericPrice));
+      formData.append('discount_nominal', String(numericDiscountNominal));
+      formData.append('discount_percent', String(numericDiscountPercent));
+      formData.append('total_price', String(finalTotalPrice));
 
       const response = await fetch(`${BASE_URL}/add/course`, {
         method: 'POST',
@@ -312,7 +369,7 @@ export default function CreateCourseModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={closeModal} />
 
-      <div className="bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 w-full max-w-xl rounded-3xl shadow-2xl relative z-10 animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white dark:bg-[#111111] border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl relative z-10 animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
         <div className="h-2 w-full bg-[#00BCD4] shrink-0" />
 
         <div className="p-6 md:p-8 overflow-y-auto no-scrollbar">
@@ -356,7 +413,7 @@ export default function CreateCourseModal({
                 {categoryError && <p className="mt-2 text-xs font-medium text-red-500">{categoryError}</p>}
               </div>
 
-              {/* === DROPDOWN LEVEL DINAMIS === */}
+              {/* === DROPDOWN LEVEL === */}
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Level</label>
                 <select
@@ -394,17 +451,79 @@ export default function CreateCourseModal({
               />
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Harga Dasar (Rp)</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={price ? new Intl.NumberFormat('id-ID').format(Number(price)) : ''}
-                onChange={handlePriceChange}
-                disabled={isSubmitting}
-                placeholder="Contoh: 150000 (Kosongkan jika gratis)"
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-[#00BCD4]/50 outline-none transition-all disabled:opacity-70"
-              />
+            {/* ✨ AREA HARGA & DISKON */}
+            <div className="bg-slate-50 dark:bg-[#161616] border border-slate-200 dark:border-slate-800 p-4 rounded-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* 1. Harga Dasar */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                    Harga Dasar (Rp)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={price ? new Intl.NumberFormat('id-ID').format(Number(price)) : ''}
+                    onChange={handlePriceChange}
+                    disabled={isSubmitting}
+                    placeholder="Contoh: 150000"
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-[#00BCD4]/50 outline-none transition-all disabled:opacity-70"
+                  />
+                </div>
+
+                {/* 2. Diskon & Toggle */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider">
+                      Diskon (Opsional)
+                    </label>
+                    <div className="flex rounded-md bg-slate-200 dark:bg-slate-800 p-0.5 border border-slate-300 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setDiscountMode("percent")}
+                        className={`rounded px-2 py-0.5 text-[10px] font-bold transition-all ${discountMode === "percent" ? "bg-rose-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                      >
+                        %
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountMode("nominal")}
+                        className={`rounded px-2 py-0.5 text-[10px] font-bold transition-all ${discountMode === "nominal" ? "bg-rose-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}
+                      >
+                        Rp
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="relative flex items-center">
+                    {discountMode === "nominal" && (
+                      <span className="absolute left-4 text-sm font-bold text-slate-400">Rp</span>
+                    )}
+                    <input
+                      type="text"
+                      inputMode={discountMode === "percent" ? "decimal" : "numeric"}
+                      disabled={isSubmitting || numericPrice === 0}
+                      value={discountMode === "percent" ? discountPercent : (discountNominal ? new Intl.NumberFormat('id-ID').format(Number(discountNominal)) : '')}
+                      onChange={discountMode === "percent" ? handleDiscountPercentChange : handleDiscountNominalChange}
+                      placeholder={numericPrice === 0 ? "Isi harga dulu" : "0"}
+                      className={`w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-3 text-sm font-bold text-rose-600 dark:text-rose-400 focus:ring-2 focus:ring-rose-500/50 outline-none transition-all disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800 ${discountMode === "nominal" ? "pl-10 pr-4" : "pl-4 pr-10 text-right"}`}
+                    />
+                    {discountMode === "percent" && (
+                      <span className="absolute right-4 text-sm font-bold text-slate-400">%</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Harga Final Banner */}
+              <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700/50 flex flex-col sm:flex-row items-center justify-between gap-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  Harga Akhir Kelas:
+                </span>
+                <span className={`text-2xl font-black ${finalTotalPrice === 0 ? 'text-emerald-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  {finalTotalPrice === 0 ? "GRATIS" : formatRupiah(finalTotalPrice)}
+                </span>
+              </div>
             </div>
 
             <button

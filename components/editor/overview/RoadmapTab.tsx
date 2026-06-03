@@ -384,15 +384,6 @@ export default function RoadmapTab({
             Buat roadmap pertama untuk course ini.
           </p>
 
-          <button
-            type="button"
-            onClick={addRoadmapStep}
-            disabled={isCreating}
-            className={`mt-5 inline-flex items-center justify-center gap-2 rounded-2xl bg-[#00BCD4] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 transition-all hover:bg-cyan-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 ${fontClassName}`}
-          >
-            <span className="material-symbols-outlined text-[20px]">add_circle</span>
-            {isCreating ? 'Menambahkan...' : 'Tambah Roadmap Pertama'}
-          </button>
         </div>
       ) : (
         <div className="relative before:absolute before:inset-y-2 before:left-5.75 md:before:left-6.75 before:w-0.5 before:bg-slate-100 dark:before:bg-slate-800/60 space-y-8 pl-1 pb-4">
