@@ -143,8 +143,6 @@ export default function AllCoursesPage() {
       });
 
       // 🔥 2. FRONTEND FAILSAFE FILTER (Saringan Lapis Kedua Mutlak)
-      // Jika Backend ternyata 'bocor' dan mengabaikan parameter pencarian,
-      // kita saring secara paksa di frontend agar UI kosong jika tidak ada yang cocok.
       if (debouncedSearch) {
         const s = debouncedSearch.toLowerCase();
         formattedCourses = formattedCourses.filter((c: ApiAllCourseItem) => c.title.toLowerCase().includes(s));
@@ -176,6 +174,41 @@ export default function AllCoursesPage() {
     fetchAllCourses();
   }, [fetchAllCourses]);
 
+
+  // ✨ FUNCTION: Handler Update Status Kelas (Publikasi / Tahan)
+  const handleUpdateStatus = async (courseId: number, targetStatus: string) => {
+    try {
+      const token = Cookies.get("api_token") || process.env.NEXT_PUBLIC_API_TOKEN;
+      
+      // Catatan: Gunakan metode PUT atau POST sesuai dengan desain API Backend Anda.
+      // Di sini saya asumsikan menggunakan metode PUT untuk update data spesifik.
+      const response = await fetch(`${BASE_URL}/update/course/status/${courseId}`, {
+        method: "PUT", 
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: targetStatus })
+      });
+
+      const result = await response.json();
+
+      // Memeriksa response format seperti yang Anda berikan sebelumnya
+      if (response.ok && result.data?.success) {
+        alert(result.data.message || `Status berhasil diubah menjadi ${targetStatus}`);
+        
+        // Refetch tabel agar UI ter-update dengan data status terbaru
+        fetchAllCourses();
+      } else {
+        alert("Gagal memperbarui status. Periksa kembali jaringan atau konfigurasi Anda.");
+      }
+    } catch (error) {
+      console.error("Gagal update status:", error);
+      alert("Terjadi kesalahan sistem saat mencoba memperbarui status.");
+    }
+  };
+
   return (
     <main className="p-4 md:p-8 flex flex-col gap-6 lg:gap-8 max-w-7xl mx-auto w-full">
       {/* HEADER */}
@@ -206,11 +239,12 @@ export default function AllCoursesPage() {
         courses={courses}
         isLoading={isLoading}
         errorMsg={errorMsg}
-        currentPage={currentPage}
-        limitPerPage={LIMIT_PER_PAGE}
+        // currentPage={currentPage}
+        // limitPerPage={LIMIT_PER_PAGE}
         openActionMenuId={openActionMenuId}
         setOpenActionMenuId={setOpenActionMenuId}
         onRetry={fetchAllCourses}
+        onUpdateStatus={handleUpdateStatus} // ✨ Mengirimkan props function ke tabel
       />
 
       {/* PAGINATION */}
