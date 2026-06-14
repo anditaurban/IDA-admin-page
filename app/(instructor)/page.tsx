@@ -21,6 +21,9 @@ export default function InstructorDashboardContent() {
     totalPages,
     totalItems,
     fetchCourses,
+    globalStats, 
+    isStatsLoading,
+    fetchStats,
     isAddModalOpen,
     setIsAddModalOpen,
     activeOwnerId,
@@ -28,16 +31,12 @@ export default function InstructorDashboardContent() {
     isAuthChecking,
   } = useInstructorDashboard();
 
-  // =======================================================================
-  // ✨ DUMMY STATE UNTUK LAYOUTING (Ganti dengan data asli dari API nanti)
-  // =======================================================================
-  const isStatsLoading = false; // Ubah ke true untuk melihat animasi loading
-  const globalStats = {
-    activeStudents: "1,248", // Belum ada API, biarkan statis
-    totalRecords: "156",     // Total Kirim Tugas
-    needsReviewCount: "24",  // Belum Direview
-    gradedCount: "132"       // Sudah Dinilai
-  };
+  useEffect(() => {
+    if (activeOwnerId && !isAuthChecking) {
+      fetchCourses(1, "", "", "");
+      fetchStats(); // ✨ Panggil fungsi ini agar Card Stats merender animasi loading lalu menampilkan data
+    }
+  }, [activeOwnerId, isAuthChecking, fetchCourses, fetchStats]);
 
   // 4 Cards sesuai instruksi Head Team
   const instructorStats = [

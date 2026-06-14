@@ -22,7 +22,8 @@ function isAuthPath(pathname: string) {
   return authRoutes.includes(pathname);
 }
 
-export function middleware(request: NextRequest) {
+// ✨ FIX: Gunakan "export default" agar Next.js membacanya dengan sempurna
+export default function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   const sessionToken = request.cookies.get(AUTH_COOKIE_NAME)?.value;

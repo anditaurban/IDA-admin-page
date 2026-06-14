@@ -30,11 +30,8 @@ interface ApiCourseItem {
   level?: string;
   price?: number;
   total_price?: number;
-  
-  // ✨ FIX: Tambahkan dua baris ini agar TypeScript kenal
   discount_nominal?: number | string;
   discount_percent?: number | string; 
-  
   thumbnail?: string;
   author?: string;
   rating?: string;
@@ -61,6 +58,15 @@ export function useInstructorDashboard() {
   const [courses, setCourses] = useState<CourseItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ✨ STATE BARU UNTUK STATS CARDS
+  const [isStatsLoading, setIsStatsLoading] = useState(true);
+  const [globalStats, setGlobalStats] = useState({
+    activeStudents: "0",
+    totalRecords: "0",
+    needsReviewCount: "0",
+    gradedCount: "0"
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -75,13 +81,11 @@ export function useInstructorDashboard() {
   const ENV_OWNER_ID = process.env.NEXT_PUBLIC_OWNER_ID || '';
   const ENV_API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN || '';
 
-  // ✨ AMBIL owner_id (Lembaga)
   const activeOwnerId = useMemo(() => {
     const profileOwnerId = userProfile?.owner_id;
     return profileOwnerId ? String(profileOwnerId) : ENV_OWNER_ID;
   }, [userProfile, ENV_OWNER_ID]);
 
-  // ✨ AMBIL user_id (Instruktur Spesifik)
   const activeUserId = useMemo(() => {
     return userProfile?.user_id ? String(userProfile.user_id) : '';
   }, [userProfile]);
@@ -129,36 +133,56 @@ export function useInstructorDashboard() {
     }
   };
 
+  // ✨ FUNGSI BARU: MENGAMBIL DATA STATS CARD
+  const fetchStats = useCallback(async () => {
+    if (isAuthChecking || !BASE_URL || !activeOwnerId) return;
+    setIsStatsLoading(true);
+
+    try {
+      const activeToken = getActiveToken();
+      const headers: HeadersInit = { Accept: 'application/json', 'Content-Type': 'application/json' };
+      if (activeToken) headers.Authorization = `Bearer ${activeToken}`;
+
+      // =========================================================================================
+      // 🚨 TUGAS ANDA: Minta URL API ini ke Head Team!
+      // Contoh: const endpoint = `${BASE_URL}/instructor-stats/${activeOwnerId}`;
+      // =========================================================================================
+      
+      // SEMENTARA: Kita gunakan simulasi data agar UI tidak kosong sambil menunggu API backend
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Delay simulasi loading 1 detik
+      setGlobalStats({
+        activeStudents: "154", // Ganti dengan parsing data dari Backend nanti: data.total_siswa
+        totalRecords: "89",    // Ganti dengan: data.total_tugas
+        needsReviewCount: "12",// Ganti dengan: data.belum_direview
+        gradedCount: "77"      // Ganti dengan: data.sudah_dinilai
+      });
+
+    } catch (error) {
+      console.error('Gagal memuat statistik:', error);
+    } finally {
+      setIsStatsLoading(false);
+    }
+  }, [BASE_URL, activeOwnerId, getActiveToken, isAuthChecking]);
+
+
   const fetchCourses = useCallback(
-    async (
-      page: number, 
-      search: string = '', 
-      categoryId: string = '', 
-      levelId: string = ''
-    ) => {
-      if (isAuthChecking) return;
+    async (page: number, search: string = '', categoryId: string = '', levelId: string = '') => {
+      if (isAuthChecking || !BASE_URL || !activeUserId) return;
       setIsLoading(true);
 
       try {
-        if (!BASE_URL) return;
-        if (!activeUserId) return;
-
         const activeToken = getActiveToken();
         const headers: HeadersInit = { Accept: 'application/json', 'Content-Type': 'application/json' };
         if (activeToken) headers.Authorization = `Bearer ${activeToken}`;
 
-        // 1. Susun Parameter Query secara dinamis
         const params = new URLSearchParams();
         params.append('limit', '12');
         params.append('per_page', '12');
-        
         if (search.trim()) params.append('search', search.trim());
         if (categoryId) params.append('category_id', categoryId);
         if (levelId) params.append('level_id', levelId);
 
-        // 2. Tembak ke endpoint dengan query params gabungan
         const endpoint = `${BASE_URL}/table/course/${activeUserId}/${page}?${params.toString()}`;
-
         const response = await fetch(endpoint, { method: 'GET', headers });
 
         if (response.status === 401 || response.status === 403) {
@@ -184,7 +208,7 @@ export function useInstructorDashboard() {
             id: item.course_id,
             slug: String(item.course_id),
             title: item.title,
-            status: 'Published', // Sesuaikan jika API mengirimkan status asli
+            status: 'Published', 
             students: item.students || 0,
             lastUpdated: formatSimpleDate(dateToUse),
             progress: item.progress || 100,
@@ -203,10 +227,7 @@ export function useInstructorDashboard() {
 
       } catch (error) {
         console.error('Gagal memuat data kelas:', error);
-        setCourses([]);
-        setTotalPages(1);
-        setCurrentPage(1);
-        setTotalItems(0);
+        setCourses([]); setTotalPages(1); setCurrentPage(1); setTotalItems(0);
       } finally {
         setIsLoading(false);
       }
@@ -222,20 +243,13 @@ export function useInstructorDashboard() {
   }, [userProfile]);
 
   return {
-    courses,
-    isLoading,
-    searchQuery,
-    setSearchQuery,
-    currentPage,
-    totalPages,
-    totalItems, // ✨ EXPORT DATA TOTAL ITEM
-    fetchCourses,
-    isAddModalOpen,
-    setIsAddModalOpen,
-    userProfile,
-    isAuthChecking,
-    activeOwnerId,
-    getDisplayName,
-    performLogout,
+    courses, isLoading, searchQuery, setSearchQuery,
+    currentPage, totalPages, totalItems, fetchCourses,
+    
+    // ✨ JANGAN LUPA EXPORT VARIABEL STATS-NYA
+    globalStats, isStatsLoading, fetchStats,
+
+    isAddModalOpen, setIsAddModalOpen, userProfile, isAuthChecking,
+    activeOwnerId, getDisplayName, performLogout,
   };
 }
