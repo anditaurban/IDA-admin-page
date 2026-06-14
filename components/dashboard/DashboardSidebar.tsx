@@ -56,7 +56,6 @@ export default function DashboardSidebar({ activeMenu, setActiveMenu, onLogout, 
             { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', href: '/' },
             { id: 'courses', label: 'All Courses', icon: 'library_books', href: '/courses' },
             { id: 'students', label: 'Students', icon: 'group', href: '/students' },
-            { id: 'revenue', label: 'Revenue', icon: 'payments', href: '/revenue' },
           ].map((menu) => (
             // ✨ Ubah <button> menjadi <Link>
             <Link

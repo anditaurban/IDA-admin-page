@@ -19,7 +19,6 @@ export default function InstructorLayout({ children }: { children: React.ReactNo
   // Highlight menu otomatis mengikuti URL saat ini
   const activeMenu = pathname.includes('/courses') ? 'courses' 
                    : pathname.includes('/students') ? 'students' 
-                   : pathname.includes('/revenue') ? 'revenue' 
                    : 'dashboard';
 
   return (

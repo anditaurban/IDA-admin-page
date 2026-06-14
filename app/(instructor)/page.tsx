@@ -10,12 +10,6 @@ import { useInstructorDashboard } from '@/hooks/useInstructorDashboard';
 
 const googleSansAlt = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '700', '800'] });
 
-const instructorStats = [
-  { id: 1, label: 'Total Siswa Aktif', value: '1,248', icon: 'groups', color: 'text-blue-500', bg: 'bg-blue-500/10' },
-  { id: 2, label: 'Pendapatan Bulan Ini', value: 'Rp 14.5M', icon: 'account_balance_wallet', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  { id: 3, label: 'Rata-rata Rating', value: '4.8 / 5.0', icon: 'star', color: 'text-amber-500', bg: 'bg-amber-500/10' },
-];
-
 export default function InstructorDashboardContent() {
   const router = useRouter();
   const currentYear = new Date().getFullYear(); 
@@ -34,11 +28,30 @@ export default function InstructorDashboardContent() {
     isAuthChecking,
   } = useInstructorDashboard();
 
+  // =======================================================================
+  // ✨ DUMMY STATE UNTUK LAYOUTING (Ganti dengan data asli dari API nanti)
+  // =======================================================================
+  const isStatsLoading = false; // Ubah ke true untuk melihat animasi loading
+  const globalStats = {
+    activeStudents: "1,248", // Belum ada API, biarkan statis
+    totalRecords: "156",     // Total Kirim Tugas
+    needsReviewCount: "24",  // Belum Direview
+    gradedCount: "132"       // Sudah Dinilai
+  };
+
+  // 4 Cards sesuai instruksi Head Team
+  const instructorStats = [
+    { id: 1, label: 'Total Siswa Aktif', value: globalStats.activeStudents, icon: 'group', color: 'text-blue-500', bg: 'bg-blue-50/80 dark:bg-blue-500/10', border: 'border-blue-100 dark:border-blue-500/20' },
+    { id: 2, label: 'Total Kirim Tugas', value: globalStats.totalRecords, icon: 'upload_file', color: 'text-fuchsia-500', bg: 'bg-fuchsia-50/80 dark:bg-fuchsia-500/10', border: 'border-fuchsia-100 dark:border-fuchsia-500/20' },
+    { id: 3, label: 'Belum Direview', value: globalStats.needsReviewCount, icon: 'pending_actions', color: 'text-amber-500', bg: 'bg-amber-50/80 dark:bg-amber-500/10', border: 'border-amber-100 dark:border-amber-500/20' },
+    { id: 4, label: 'Sudah Dinilai', value: globalStats.gradedCount, icon: 'task_alt', color: 'text-emerald-500', bg: 'bg-emerald-50/80 dark:bg-emerald-500/10', border: 'border-emerald-100 dark:border-emerald-500/20' },
+  ];
+
   // ✨ LOGIKA TRIGGER FETCH API (Jalan Otomatis saat Halaman Dimuat)
-  // Karena tidak ada filter, kita panggil API kosong (page 1) langsung saat auth selesai
   useEffect(() => {
     if (activeOwnerId && !isAuthChecking) {
       fetchCourses(1, "", "", "");
+      // Nanti tambahkan fungsi fetchStats() disini
     }
   }, [activeOwnerId, isAuthChecking, fetchCourses]);
 
@@ -70,21 +83,26 @@ export default function InstructorDashboardContent() {
           </button>
         </div>
 
-        {/* STATS OVERVIEW */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
-          {instructorStats.map((stat, index) => (
+        {/* ✨ STATS OVERVIEW (BAGIAN YANG DIUBAH) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+          {instructorStats.map((stat) => (
             <div 
               key={stat.id} 
-              className={`bg-white dark:bg-[#111111] p-4 md:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 md:gap-5 hover:-translate-y-1 transition-transform duration-300 ${
-                index === 2 ? 'col-span-2 md:col-span-1' : 'col-span-1'
-              }`}
+              className={`bg-white dark:bg-[#111111] p-5 rounded-3xl border shadow-xs flex items-center gap-4 hover:-translate-y-1 transition-all duration-300 ${stat.border}`}
             >
-              <div className={`size-10 md:size-14 rounded-2xl flex items-center justify-center shrink-0 ${stat.bg} ${stat.color}`}>
-                <span className="material-symbols-outlined text-[24px] md:text-[28px]">{stat.icon}</span>
+              <div className={`size-12 rounded-full flex items-center justify-center shrink-0 ${stat.bg} ${stat.color}`}>
+                <span className="material-symbols-outlined text-[24px]">{stat.icon}</span>
               </div>
-              <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5 truncate">{stat.label}</p>
-                <p className={`text-lg md:text-2xl font-extrabold text-slate-900 dark:text-white truncate ${googleSansAlt.className}`}>{stat.value}</p>
+              
+              {/* Ubah min-w-0 menjadi flex-1 min-w-0 agar kontainer teks melebar penuh */}
+              <div className="flex-1 min-w-0">
+                {/* ✨ Hapus 'truncate', ganti dengan 'whitespace-normal break-words' agar teks otomatis ke bawah */}
+                <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5 whitespace-normal wrap-break-words">
+                  {stat.label}
+                </p>
+                <p className={`text-xl md:text-2xl font-extrabold text-slate-900 dark:text-white truncate ${googleSansAlt.className}`}>
+                  {isStatsLoading ? <span className="animate-pulse opacity-50">...</span> : stat.value}
+                </p>
               </div>
             </div>
           ))}
